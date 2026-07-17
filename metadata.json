@@ -1,0 +1,6 @@
+{
+  "name": "Gesetzeslotse BERLIN - Berater Workspace",
+  "description": "Kanzlei-Workspace und Gläubiger-Verzeichnis-Cockpit gem. § 305 insO zur professionellen Forderungsaufbereitung und Mandanten-Betreuung.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

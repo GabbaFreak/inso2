@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@media print {
+  /* Hide everything except our print target container */
+  body * {
+    visibility: hidden;
+  }
+  #print-certificate-container, #print-certificate-container * {
+    visibility: visible;
+  }
+  #print-certificate-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 1.5cm;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
