@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FileDown, Copy, Check, FileText, Send, User, MapPin, Plus, Trash2, Bookmark, Save, Sparkles, FolderHeart, Eye, Search, X } from "lucide-react";
 import { LetterData, LetterTemplateType, Creditor } from "../types";
+import { logGesetzeslotseActivity } from "../lib/history";
 
 export default function LetterGenerator() {
   const [templateType, setTemplateType] = useState<LetterTemplateType>("ratenzahlung");
@@ -280,6 +281,17 @@ Gesetzeslotse BERLIN Schuldnerberatung
     navigator.clipboard.writeText(getLetterContent());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+
+    let templateLabel = "";
+    if (templateType === "ratenzahlung") templateLabel = "Vorschlag Ratenzahlung";
+    else if (templateType === "pkonto_conversion") templateLabel = "Antrag P-Konto Umwandlung";
+    else if (templateType === "brief_gerichtsvollzieher") templateLabel = "Ratenzahlungsangebot an GV";
+
+    logGesetzeslotseActivity(
+      "letter",
+      "Kanzlei-Briefkopie erstellt",
+      `Schreiben "${templateLabel}" für ${formData.senderName} an ${formData.creditorName} in die Zwischenablage kopiert.`
+    );
   };
 
   return (

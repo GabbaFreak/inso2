@@ -54,6 +54,9 @@ export interface DebtorProfile {
   pob: string;
   address: string;
   competentCourt: string;
+  isEmployed?: boolean;
+  netIncome?: number;
+  employer?: string;
 }
 
 interface ZinsInterval {
@@ -226,13 +229,6 @@ const parseToTime = (dateStr?: string) => {
 export default function DebtListAssistant() {
   const [profiles, setProfiles] = useState<DebtorProfile[]>(() => {
     const stored = localStorage.getItem("gesetzeslotse_profiles");
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        console.error("Failed to parse profiles", e);
-      }
-    }
     const defaultList: DebtorProfile[] = [
       {
         id: "schmidt",
@@ -240,7 +236,10 @@ export default function DebtListAssistant() {
         dob: "15.03.1985",
         pob: "Berlin",
         address: "Heidestraße 48, 10557 Berlin",
-        competentCourt: "Amtsgericht Wedding - Insolvenzgericht -"
+        competentCourt: "Amtsgericht Wedding - Insolvenzgericht -",
+        isEmployed: true,
+        employer: "Acme Logistik GmbH",
+        netIncome: 1850.00
       },
       {
         id: "weber",
@@ -248,9 +247,31 @@ export default function DebtListAssistant() {
         dob: "28.11.1972",
         pob: "Potsdam",
         address: "Karl-Marx-Str. 12, 12043 Berlin",
-        competentCourt: "Amtsgericht Tempelhof-Kreuzberg - Insolvenzgericht -"
+        competentCourt: "Amtsgericht Tempelhof-Kreuzberg - Insolvenzgericht -",
+        isEmployed: false,
+        employer: "",
+        netIncome: 0.00
       }
     ];
+
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return parsed.map(p => {
+            if (p.id === "schmidt") {
+              return { ...p, isEmployed: p.isEmployed !== undefined ? p.isEmployed : true, employer: p.employer || "Acme Logistik GmbH", netIncome: p.netIncome !== undefined ? p.netIncome : 1850.00 };
+            }
+            if (p.id === "weber") {
+              return { ...p, isEmployed: p.isEmployed !== undefined ? p.isEmployed : false, employer: p.employer || "", netIncome: p.netIncome !== undefined ? p.netIncome : 0.00 };
+            }
+            return p;
+          });
+        }
+      } catch (e) {
+        console.error("Failed to parse profiles", e);
+      }
+    }
     localStorage.setItem("gesetzeslotse_profiles", JSON.stringify(defaultList));
     return defaultList;
   });
@@ -269,6 +290,9 @@ export default function DebtListAssistant() {
   const [newProfilePob, setNewProfilePob] = useState("Berlin");
   const [newProfileAddress, setNewProfileAddress] = useState("");
   const [newProfileCourt, setNewProfileCourt] = useState("Amtsgericht Wedding - Insolvenzgericht -");
+  const [newProfileIsEmployed, setNewProfileIsEmployed] = useState(false);
+  const [newProfileEmployer, setNewProfileEmployer] = useState("");
+  const [newProfileNetIncome, setNewProfileNetIncome] = useState("");
 
   // Form Fields for Edit Profile
   const [editProfileName, setEditProfileName] = useState("");
@@ -276,6 +300,9 @@ export default function DebtListAssistant() {
   const [editProfilePob, setEditProfilePob] = useState("");
   const [editProfileAddress, setEditProfileAddress] = useState("");
   const [editProfileCourt, setEditProfileCourt] = useState("");
+  const [editProfileIsEmployed, setEditProfileIsEmployed] = useState(false);
+  const [editProfileEmployer, setEditProfileEmployer] = useState("");
+  const [editProfileNetIncome, setEditProfileNetIncome] = useState("");
 
   const [debts, setDebts] = useState<DebtItem[]>([]);
   const [isAnalyzingDoc, setIsAnalyzingDoc] = useState(false);
@@ -634,6 +661,9 @@ export default function DebtListAssistant() {
       localStorage.setItem("gesetzeslotse_active_debtor_pob", foundProfile.pob);
       localStorage.setItem("gesetzeslotse_active_debtor_address", foundProfile.address);
       localStorage.setItem("gesetzeslotse_active_debtor_court", foundProfile.competentCourt);
+      localStorage.setItem("gesetzeslotse_active_debtor_is_employed", foundProfile.isEmployed ? "true" : "false");
+      localStorage.setItem("gesetzeslotse_active_debtor_employer", foundProfile.employer || "");
+      localStorage.setItem("gesetzeslotse_active_debtor_net_income", String(foundProfile.netIncome || 0));
     } else {
       if (activeProfile === "schmidt") {
         localStorage.setItem("gesetzeslotse_active_debtor_name", "Maximilian Schmidt");
@@ -641,12 +671,18 @@ export default function DebtListAssistant() {
         localStorage.setItem("gesetzeslotse_active_debtor_pob", "Berlin");
         localStorage.setItem("gesetzeslotse_active_debtor_address", "Heidestraße 48, 10557 Berlin");
         localStorage.setItem("gesetzeslotse_active_debtor_court", "Amtsgericht Wedding - Insolvenzgericht -");
+        localStorage.setItem("gesetzeslotse_active_debtor_is_employed", "true");
+        localStorage.setItem("gesetzeslotse_active_debtor_employer", "Acme Logistik GmbH");
+        localStorage.setItem("gesetzeslotse_active_debtor_net_income", "1850");
       } else {
         localStorage.setItem("gesetzeslotse_active_debtor_name", "Gabriele Weber");
         localStorage.setItem("gesetzeslotse_active_debtor_dob", "28.11.1972");
         localStorage.setItem("gesetzeslotse_active_debtor_pob", "Potsdam");
         localStorage.setItem("gesetzeslotse_active_debtor_address", "Karl-Marx-Str. 12, 12043 Berlin");
         localStorage.setItem("gesetzeslotse_active_debtor_court", "Amtsgericht Tempelhof-Kreuzberg - Insolvenzgericht -");
+        localStorage.setItem("gesetzeslotse_active_debtor_is_employed", "false");
+        localStorage.setItem("gesetzeslotse_active_debtor_employer", "");
+        localStorage.setItem("gesetzeslotse_active_debtor_net_income", "0");
       }
     }
     localStorage.setItem("gesetzeslotse_active_profile", activeProfile);
@@ -911,13 +947,20 @@ export default function DebtListAssistant() {
       return;
     }
     const newId = "custom_" + Date.now();
+    const isEmp = newProfileIsEmployed;
+    const empName = isEmp ? newProfileEmployer.trim() : "";
+    const netInc = isEmp ? (parseFloat(newProfileNetIncome) || 0) : 0;
+
     const newProf: DebtorProfile = {
       id: newId,
       name: newProfileName.trim(),
       dob: newProfileDob.trim() || "01.01.1980",
       pob: newProfilePob.trim() || "Berlin",
       address: newProfileAddress.trim() || "Musterstraße 1, 10115 Berlin",
-      competentCourt: newProfileCourt
+      competentCourt: newProfileCourt,
+      isEmployed: isEmp,
+      employer: empName,
+      netIncome: netInc
     };
 
     const updated = [...profiles, newProf];
@@ -930,6 +973,9 @@ export default function DebtListAssistant() {
     setNewProfilePob("Berlin");
     setNewProfileAddress("");
     setNewProfileCourt("Amtsgericht Wedding - Insolvenzgericht -");
+    setNewProfileIsEmployed(false);
+    setNewProfileEmployer("");
+    setNewProfileNetIncome("");
     setShowCreateProfileModal(false);
 
     // Switch to new profile
@@ -943,6 +989,10 @@ export default function DebtListAssistant() {
       return;
     }
 
+    const isEmp = editProfileIsEmployed;
+    const empName = isEmp ? editProfileEmployer.trim() : "";
+    const netInc = isEmp ? (parseFloat(editProfileNetIncome) || 0) : 0;
+
     const updated = profiles.map(p => {
       if (p.id === activeProfile) {
         return {
@@ -951,7 +1001,10 @@ export default function DebtListAssistant() {
           dob: editProfileDob.trim(),
           pob: editProfilePob.trim(),
           address: editProfileAddress.trim(),
-          competentCourt: editProfileCourt
+          competentCourt: editProfileCourt,
+          isEmployed: isEmp,
+          employer: empName,
+          netIncome: netInc
         };
       }
       return p;
@@ -967,6 +1020,9 @@ export default function DebtListAssistant() {
     localStorage.setItem("gesetzeslotse_active_debtor_pob", editProfilePob.trim());
     localStorage.setItem("gesetzeslotse_active_debtor_address", editProfileAddress.trim());
     localStorage.setItem("gesetzeslotse_active_debtor_court", editProfileCourt);
+    localStorage.setItem("gesetzeslotse_active_debtor_is_employed", isEmp ? "true" : "false");
+    localStorage.setItem("gesetzeslotse_active_debtor_employer", empName);
+    localStorage.setItem("gesetzeslotse_active_debtor_net_income", String(netInc));
     window.dispatchEvent(new CustomEvent("gesetzeslotse_profile_changed"));
   };
 
@@ -1000,6 +1056,9 @@ export default function DebtListAssistant() {
       setEditProfilePob(current.pob || "Berlin");
       setEditProfileAddress(current.address || "");
       setEditProfileCourt(current.competentCourt || "Amtsgericht Wedding - Insolvenzgericht -");
+      setEditProfileIsEmployed(current.isEmployed || false);
+      setEditProfileEmployer(current.employer || "");
+      setEditProfileNetIncome(current.netIncome !== undefined ? String(current.netIncome) : "");
       setShowEditProfileModal(true);
     }
   };
@@ -2362,7 +2421,10 @@ export default function DebtListAssistant() {
                 dob: "-",
                 pob: "-",
                 address: "-",
-                competentCourt: "-"
+                competentCourt: "-",
+                isEmployed: false,
+                employer: "",
+                netIncome: 0
               };
               return (
                 <div className="space-y-3.5">
@@ -2392,6 +2454,32 @@ export default function DebtListAssistant() {
                     <div className="md:col-span-2">
                       <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase font-mono block">Zuständiges Amtsgericht (Insolvenzgericht)</span>
                       <p className="text-xs font-semibold text-slate-800 dark:text-slate-250 mt-0.5 font-mono">{current.competentCourt || "nicht bestimmt"}</p>
+                    </div>
+
+                    {/* Employment block */}
+                    <div className="md:col-span-2 pt-2.5 border-t border-slate-200/50 dark:border-slate-800/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase font-mono block">Erwerbsstatus</span>
+                        <span className={`inline-block text-[11px] font-bold mt-1 px-2 py-0.5 rounded ${
+                          current.isEmployed 
+                            ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400" 
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                        }`}>
+                          {current.isEmployed ? "Arbeitnehmer" : "Erwerbslos / Sonstiges"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase font-mono block">Arbeitgeber</span>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1 truncate">
+                          {current.isEmployed ? (current.employer || "k.A.") : "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase font-mono block">Nettoeinkommen</span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1 font-mono">
+                          {current.isEmployed ? `€ ${(current.netIncome || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}` : "—"}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2494,6 +2582,51 @@ export default function DebtListAssistant() {
                   <option value="Amtsgericht Spandau - Insolvenzgericht -">Amtsgericht Spandau</option>
                   <option value="Amtsgericht Köpenick - Insolvenzgericht -">Amtsgericht Köpenick (Treptow-Köpenick / Alt-Glienicke)</option>
                 </select>
+              </div>
+
+              {/* Erwerbsstatus section */}
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={newProfileIsEmployed}
+                    onChange={(e) => setNewProfileIsEmployed(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 focus:ring-slate-900"
+                  />
+                  <span>Der Schuldner ist erwerbstätig (geht arbeiten)</span>
+                </label>
+
+                {newProfileIsEmployed && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fadeIn">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase font-mono block mb-1">
+                        Arbeitgeber Name *
+                      </label>
+                      <input
+                        type="text"
+                        required={newProfileIsEmployed}
+                        value={newProfileEmployer}
+                        onChange={(e) => setNewProfileEmployer(e.target.value)}
+                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 text-slate-900 dark:text-white"
+                        placeholder="z.B. Acme Logistik GmbH"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase font-mono block mb-1">
+                        Nettoeinkommen (Monatlich, EUR) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required={newProfileIsEmployed}
+                        value={newProfileNetIncome}
+                        onChange={(e) => setNewProfileNetIncome(e.target.value)}
+                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 text-slate-900 dark:text-white font-mono"
+                        placeholder="z.B. 1850.00"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2.5 items-center justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -2836,6 +2969,51 @@ export default function DebtListAssistant() {
                   <option value="Amtsgericht Spandau - Insolvenzgericht -">Amtsgericht Spandau</option>
                   <option value="Amtsgericht Köpenick - Insolvenzgericht -">Amtsgericht Köpenick (Treptow-Köpenick / Alt-Glienicke)</option>
                 </select>
+              </div>
+
+              {/* Erwerbsstatus section */}
+              <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={editProfileIsEmployed}
+                    onChange={(e) => setEditProfileIsEmployed(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 focus:ring-slate-900"
+                  />
+                  <span>Der Schuldner ist erwerbstätig (geht arbeiten)</span>
+                </label>
+
+                {editProfileIsEmployed && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fadeIn">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase font-mono block mb-1">
+                        Arbeitgeber Name *
+                      </label>
+                      <input
+                        type="text"
+                        required={editProfileIsEmployed}
+                        value={editProfileEmployer}
+                        onChange={(e) => setEditProfileEmployer(e.target.value)}
+                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 text-slate-900 dark:text-white"
+                        placeholder="z.B. Acme Logistik GmbH"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase font-mono block mb-1">
+                        Nettoeinkommen (Monatlich, EUR) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required={editProfileIsEmployed}
+                        value={editProfileNetIncome}
+                        onChange={(e) => setEditProfileNetIncome(e.target.value)}
+                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 text-slate-900 dark:text-white font-mono"
+                        placeholder="z.B. 1850.00"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2.5 items-center justify-end pt-3 border-t border-slate-100 dark:border-slate-800">

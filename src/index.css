@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+@keyframes soft-pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.3);
+    background-color: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    transform: scale(1.01);
+    box-shadow: 0 0 10px 3px rgba(239, 68, 68, 0.18);
+    background-color: rgba(239, 68, 68, 0.14);
+    border-color: rgba(239, 68, 68, 0.75);
+  }
+}
+
+.animate-garnish-alert {
+  animation: soft-pulse-glow 2s infinite ease-in-out;
+}
+
 @media print {
   /* Hide everything except our print target container */
   body * {

@@ -9,6 +9,7 @@ import SenateInvoicer from "./components/SenateInvoicer";
 import Scheiternsbescheinigung from "./components/Scheiternsbescheinigung";
 import VollmachtGenerator from "./components/VollmachtGenerator";
 import Schuldenbereinigungsplan from "./components/Schuldenbereinigungsplan";
+import { ActivityLog } from "./lib/history";
 import { 
   Building, 
   CheckCircle, 
@@ -30,6 +31,9 @@ type ActiveTab = "pkonto" | "fristen" | "briefe" | "schulden" | "vergleich" | "r
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("schulden");
+  const [hasImminentDeadline, setHasImminentDeadline] = useState<boolean>(false);
+  const [imminentCount, setImminentCount] = useState<number>(0);
+  const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
 
   // Determine active phase based on current tab automatically, but allow mechanical overrides
   const getPhaseForTab = (tab: ActiveTab): 1 | 2 | 3 => {
@@ -44,6 +48,58 @@ export default function App() {
   useEffect(() => {
     setActivePhase(getPhaseForTab(activeTab));
   }, [activeTab]);
+
+  const checkDeadlinesAndHistory = () => {
+    // 1. Check deadlines
+    const storedDeadlines = localStorage.getItem("gesetzeslotse_recorded_deadlines");
+    if (storedDeadlines) {
+      try {
+        const list = JSON.parse(storedDeadlines);
+        const imminent = list.filter((item: any) => {
+          const deadDate = new Date(item.receivedDate);
+          deadDate.setDate(deadDate.getDate() + (item.docType === "mahnbescheid" || item.docType === "vollstreckungsbescheid" ? 14 : item.docType === "gerichtsvollzieher" ? 7 : 10));
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          deadDate.setHours(0,0,0,0);
+          const diffTime = deadDate.getTime() - today.getTime();
+          const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return days >= 0 && days <= 7;
+        });
+        setHasImminentDeadline(imminent.length > 0);
+        setImminentCount(imminent.length);
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setHasImminentDeadline(false);
+      setImminentCount(0);
+    }
+
+    // 2. Load last 3 activities
+    const storedHistory = localStorage.getItem("gesetzeslotse_activity_history");
+    if (storedHistory) {
+      try {
+        const list = JSON.parse(storedHistory);
+        setActivityHistory(list.slice(0, 3));
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setActivityHistory([]);
+    }
+  };
+
+  useEffect(() => {
+    checkDeadlinesAndHistory();
+    window.addEventListener("gesetzeslotse_deadline_updated", checkDeadlinesAndHistory);
+    window.addEventListener("gesetzeslotse_activity_logged", checkDeadlinesAndHistory);
+    window.addEventListener("gesetzeslotse_profile_changed", checkDeadlinesAndHistory);
+    return () => {
+      window.removeEventListener("gesetzeslotse_deadline_updated", checkDeadlinesAndHistory);
+      window.removeEventListener("gesetzeslotse_activity_logged", checkDeadlinesAndHistory);
+      window.removeEventListener("gesetzeslotse_profile_changed", checkDeadlinesAndHistory);
+    };
+  }, []);
 
   useEffect(() => {
     const handleSetActiveTab = (e: any) => {
@@ -80,6 +136,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {hasImminentDeadline && (
+              <button 
+                onClick={() => {
+                  setActiveTab("fristen");
+                  setActivePhase(1);
+                }}
+                className="flex items-center gap-2 bg-rose-600 hover:bg-rose-755 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer shadow-sm animate-pulse shrink-0 border border-rose-700 transition-colors"
+                title="Dringende Fristen vorhanden! Hier klicken zum Prüfen."
+              >
+                <AlertTriangle className="h-4 w-4 text-white" />
+                <span>{imminentCount} Frist{imminentCount === 1 ? "" : "en"} läuft bald ab!</span>
+              </button>
+            )}
             <div className="text-right hidden md:block">
               <span className="text-xs text-slate-400 block font-medium">Büroschnittstelle für anerkannte Stellen</span>
               <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Kanzlei-Verfahrensport / Berlin-Brandenburg</span>
@@ -99,6 +168,220 @@ export default function App() {
             <p className="font-bold text-slate-850 dark:text-blue-300 mb-0.5">Mandantenakte & Forderungsmanagement gemaß § 305 insO</p>
             Stellen Sie sicher, dass insolvenzrechtliche und gerichtliche Fristen (z.B. Widerspruch binnen 14 Tagen) fur das insolvenzrechtliche Vorverfahren lückenlos erfasst, berechnet und gepflegt werden. Nutzen Sie den Kanzlei-Copiloten Lukas für rechtliche Fragen und zur Analyse komplexer Mahnbescheide.
           </div>
+        </div>
+
+        {/* Procedural Case Progress Tracker */}
+        <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 rounded-2xl p-5 shadow-sm" id="case-progress-tracker">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4.5">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
+                <ClipboardList className="h-4.5 w-4.5 text-slate-650 dark:text-slate-350" />
+                Aktueller Verfahrensstand d. Mandantenakte (§ 305 Abs. 1 InsO)
+              </h3>
+              <p className="text-[10px] text-slate-500 dark:text-slate-450 mt-0.5">
+                Strukturierte Visualisierung des Fortschritts im gesetzlichen Verbraucherinsolvenzverfahren
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-bold">Status d. Einigungsversuchs:</span>
+              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Außergerichtliche Regulierung läuft</span>
+            </div>
+          </div>
+
+          {/* Stepper Timeline UI */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 relative">
+            
+            {/* Step 1: Ersterfassung */}
+            <div className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+              activeTab === "schulden"
+                ? "border-slate-900 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                : "border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Schritt 1</span>
+                  <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 flex items-center justify-center text-[10px] font-black">✓</span>
+                </div>
+                <h4 className="text-xs font-bold">Ersterfassung</h4>
+                <p className="text-[9.5px] opacity-75 mt-1 leading-normal">
+                  Gläubiger & Forderungen lückenlos eingepflegt.
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActivePhase(1); setActiveTab("schulden"); }}
+                className={`mt-2.5 text-left text-[10px] font-extrabold hover:underline flex items-center gap-1 cursor-pointer ${
+                  activeTab === "schulden" ? "text-indigo-300 dark:text-indigo-600" : "text-indigo-600 dark:text-indigo-405"
+                }`}
+              >
+                <span>Verzeichnis</span>
+                <ArrowRightLeft className="h-3 w-3" />
+              </button>
+            </div>
+
+            {/* Step 2: Sofortschutz */}
+            <div className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+              activeTab === "pkonto"
+                ? "border-slate-900 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                : "border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Schritt 2</span>
+                  <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 flex items-center justify-center text-[10px] font-black">✓</span>
+                </div>
+                <h4 className="text-xs font-bold">P-Konto Schutz</h4>
+                <p className="text-[9.5px] opacity-75 mt-1 leading-normal">
+                  Pfändungsfreibetrag berechnet & Bescheinigung bereit.
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActivePhase(1); setActiveTab("pkonto"); }}
+                className={`mt-2.5 text-left text-[10px] font-extrabold hover:underline flex items-center gap-1 cursor-pointer ${
+                  activeTab === "pkonto" ? "text-indigo-300 dark:text-indigo-600" : "text-indigo-600 dark:text-indigo-405"
+                }`}
+              >
+                <span>P-Konto Rechner</span>
+                <ArrowRightLeft className="h-3 w-3" />
+              </button>
+            </div>
+
+            {/* Step 3: Vorbereitung */}
+            <div className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+              activeTab === "vollmacht" || activeTab === "briefe"
+                ? "border-slate-900 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                : "border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Schritt 3</span>
+                  <span className="h-5 w-5 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center text-[10px] font-black">3</span>
+                </div>
+                <h4 className="text-xs font-bold">Vollmacht & Briefe</h4>
+                <p className="text-[9.5px] opacity-75 mt-1 leading-normal">
+                  Vertretung & Korrespondenzbriefe an Gläubiger.
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActivePhase(2); setActiveTab("vollmacht"); }}
+                className={`mt-2.5 text-left text-[10px] font-extrabold hover:underline flex items-center gap-1 cursor-pointer ${
+                  activeTab === "vollmacht" || activeTab === "briefe" ? "text-indigo-300 dark:text-indigo-600" : "text-indigo-600 dark:text-indigo-405"
+                }`}
+              >
+                <span>Vollmacht erstellen</span>
+                <ArrowRightLeft className="h-3 w-3" />
+              </button>
+            </div>
+
+            {/* Step 4: Bereinigung */}
+            <div className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+              activeTab === "bereinigung"
+                ? "border-slate-900 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                : "border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Schritt 4</span>
+                  <span className="h-5 w-5 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center text-[10px] font-black">4</span>
+                </div>
+                <h4 className="text-xs font-bold">Bereinigungsplan</h4>
+                <p className="text-[9.5px] opacity-75 mt-1 leading-normal">
+                  Pro-Rata Quote & Tilgungsvereinbarung berechnen.
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActivePhase(2); setActiveTab("bereinigung"); }}
+                className={`mt-2.5 text-left text-[10px] font-extrabold hover:underline flex items-center gap-1 cursor-pointer ${
+                  activeTab === "bereinigung" ? "text-indigo-300 dark:text-indigo-600" : "text-indigo-600 dark:text-indigo-405"
+                }`}
+              >
+                <span>Plan aufsetzen</span>
+                <ArrowRightLeft className="h-3 w-3" />
+              </button>
+            </div>
+
+            {/* Step 5: Abschluss */}
+            <div className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+              activeTab === "scheitern" || activeTab === "rechnung"
+                ? "border-slate-900 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                : "border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Schritt 5</span>
+                  <span className="h-5 w-5 rounded-full bg-slate-105 text-slate-600 dark:bg-slate-800 dark:text-slate-400 flex items-center justify-center text-[10px] font-black">5</span>
+                </div>
+                <h4 className="text-xs font-bold">Insolvenz / Honorar</h4>
+                <p className="text-[9.5px] opacity-75 mt-1 leading-normal">
+                  Einigung oder Bescheinigung nach § 305 InsO.
+                </p>
+              </div>
+              <button 
+                onClick={() => { setActivePhase(3); setActiveTab("scheitern"); }}
+                className={`mt-2.5 text-left text-[10px] font-extrabold hover:underline flex items-center gap-1 cursor-pointer ${
+                  activeTab === "scheitern" || activeTab === "rechnung" ? "text-indigo-300 dark:text-indigo-600" : "text-indigo-600 dark:text-indigo-405"
+                }`}
+              >
+                <span>Ergebnis</span>
+                <ArrowRightLeft className="h-3 w-3" />
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Historien-Ansicht (Last 3 calculations or letters) */}
+        <div className="mb-8 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 rounded-2xl p-5 shadow-sm animate-fadeIn" id="activity-history-panel">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
+                <FileText className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+                Letzte Aktivitäten d. Mandantenakte (Kanzlei-Protokoll)
+              </h3>
+              <p className="text-[10px] text-slate-550 dark:text-slate-455 mt-0.5 font-medium">
+                Automatische Aufzeichnung von Berechnungen, PDF-Exporten, Brief-Erstellungen und Vollmachten
+              </p>
+            </div>
+            <span className="text-[9px] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-350 font-black px-2 py-0.5 rounded uppercase tracking-wide">
+              Die letzten 3 Einträge
+            </span>
+          </div>
+
+          {activityHistory.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-xs">
+              Es liegen noch keine Kanzlei-Aktivitäten vor. Starten Sie eine Berechnung, kopieren Sie einen Musterbrief oder laden Sie eine Vollmacht herunter.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activityHistory.map((item) => {
+                let badgeBg = "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400";
+                if (item.type === "calculation") badgeBg = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400";
+                if (item.type === "frist") badgeBg = "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400";
+                if (item.type === "vollmacht") badgeBg = "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400";
+
+                return (
+                  <div 
+                    key={item.id} 
+                    className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-950/10 flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${badgeBg}`}>
+                          {item.type === "calculation" ? "Kalkulation" : item.type === "letter" ? "Brief" : item.type === "vollmacht" ? "Vollmacht" : item.type === "frist" ? "Frist" : "Aktivität"}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono font-medium">{item.timestamp}</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{item.action}</h4>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-normal line-clamp-2">{item.details}</p>
+                    </div>
+                    <div className="mt-3.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400 font-mono font-medium">
+                      <span>Mandant:</span>
+                      <span className="font-bold text-slate-650 dark:text-slate-300">{item.debtorName}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Bento Board: AI Assistant (Left) vs. Dynamic Workplaces (Right) */}

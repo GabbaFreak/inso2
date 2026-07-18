@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FileText, Download, Check, Copy, User, Calendar, MapPin, Building, ShieldCheck, RefreshCw } from "lucide-react";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { logGesetzeslotseActivity } from "../lib/history";
 
 export default function VollmachtGenerator() {
   const [copied, setCopied] = useState(false);
@@ -94,6 +95,11 @@ Handunterschrift des Vollmachtgebers (Mandanten)
     navigator.clipboard.writeText(getVollmachtText());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    logGesetzeslotseActivity(
+      "vollmacht",
+      "Vollmacht kopiert",
+      `Vertretungsvollmacht gem. § 305 InsO für den Mandanten ${debtorName} in die Zwischenablage kopiert.`
+    );
   };
 
   const downloadTextFile = () => {
@@ -108,6 +114,11 @@ Handunterschrift des Vollmachtgebers (Mandanten)
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      logGesetzeslotseActivity(
+        "vollmacht",
+        "Vollmacht als TXT exportiert",
+        `Vertretungsvollmacht für den Mandanten ${debtorName} als .txt-Datei exportiert.`
+      );
     } catch (err) {
       console.error("Txt download failed", err);
     }
@@ -444,6 +455,11 @@ Handunterschrift des Vollmachtgebers (Mandanten)
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      logGesetzeslotseActivity(
+        "vollmacht",
+        "Vollmacht als DOCX exportiert",
+        `Vertretungsvollmacht für den Mandanten ${debtorName} als professionelles .docx-Schreiben exportiert.`
+      );
     } catch (error) {
       console.error("DOCX generation of power of attorney failed", error);
     }

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Scale, Landmark, ShieldCheck, Download, AlertCircle, RefreshCw, Printer, CheckCircle, Flame, Check, HelpCircle } from "lucide-react";
 import { jsPDF } from "jspdf";
+import { getLimitsForDate } from "../data/pKontoLimits";
+import { logGesetzeslotseActivity } from "../lib/history";
 
 export default function PKontoCalculator() {
   const [ownerName, setOwnerName] = useState("Maximilian Schmidt");
@@ -24,13 +26,40 @@ export default function PKontoCalculator() {
   const [isSonstigerLeistungstraeger, setIsSonstigerLeistungstraeger] = useState(true);
   const [isFamilienkasse, setIsFamilienkasse] = useState(false);
 
-  // SECTION III Free freibetrag (Rates July 1, 2025)
-  const baseAllowance = 1560.00; 
+  const [calculationDate, setCalculationDate] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+
+  const [isEmployed, setIsEmployed] = useState<boolean>(() => {
+    const stored = localStorage.getItem("gesetzeslotse_active_debtor_is_employed");
+    // Default to true if not specified, since Maximilian Schmidt (the default client) is working
+    return stored === "true" || stored === null;
+  });
+
+  const [employerName, setEmployerName] = useState<string>(() => {
+    return localStorage.getItem("gesetzeslotse_active_debtor_employer") || "Acme Logistik GmbH";
+  });
+
+  const [debtorNetIncome, setDebtorNetIncome] = useState<number>(() => {
+    const activeIsEmployed = localStorage.getItem("gesetzeslotse_active_debtor_is_employed");
+    if (activeIsEmployed === "false") return 0;
+    const stored = localStorage.getItem("gesetzeslotse_active_debtor_net_income");
+    if (stored !== null) {
+      return parseFloat(stored) || 0;
+    }
+    return 1850.00;
+  });
+
+  const limits = getLimitsForDate(new Date(calculationDate));
+  const baseAllowance = limits.baseAllowance;
+  const firstPersonAllowance = limits.firstPersonAllowance;
+  const additionalPersonAllowance = limits.additionalPersonAllowance;
+
+  // SECTION III Free freibetrag
   const [hasFirstPerson, setHasFirstPerson] = useState(false);
-  const firstPersonAllowance = 585.23; 
   const [firstPersonReason, setFirstPersonReason] = useState<"a" | "b" | "c">("a"); // a) Unterhalt b) SGB II/XII c) AsylbLG
 
-  const [additionalPersonsCount, setAdditionalPersonsCount] = useState<number>(0); // 0 to 4 subsequent dependents (je 326,04 €)
+  const [additionalPersonsCount, setAdditionalPersonsCount] = useState<number>(0); // 0 to 4 subsequent dependents
   const [additionalPersonsReason, setAdditionalPersonsReason] = useState<"a" | "b" | "c">("a");
 
   // SECTION IV (running monthly allowances)
@@ -98,6 +127,21 @@ export default function PKontoCalculator() {
       if (activeAddress) {
         setAddressLine(activeAddress);
       }
+
+      // Sync employment info
+      const activeIsEmployed = localStorage.getItem("gesetzeslotse_active_debtor_is_employed");
+      const isEmp = activeIsEmployed === "true" || activeIsEmployed === null;
+      setIsEmployed(isEmp);
+
+      const activeEmployer = localStorage.getItem("gesetzeslotse_active_debtor_employer");
+      setEmployerName(activeEmployer || (isEmp ? "Acme Logistik GmbH" : ""));
+
+      const activeNetIncome = localStorage.getItem("gesetzeslotse_active_debtor_net_income");
+      if (activeNetIncome !== null) {
+        setDebtorNetIncome(parseFloat(activeNetIncome) || 0);
+      } else {
+        setDebtorNetIncome(isEmp ? 1850.00 : 0);
+      }
     };
     updateDebtorName();
     window.addEventListener("gesetzeslotse_debts_updated", updateDebtorName);
@@ -110,6 +154,7 @@ export default function PKontoCalculator() {
 
   // Preset configuration helper
   const applyPreset = (preset: "allein" | "partner" | "alleinKind" | "familie") => {
+    let label = "";
     if (preset === "allein") {
       setHasFirstPerson(false);
       setAdditionalPersonsCount(0);
@@ -122,12 +167,14 @@ export default function PKontoCalculator() {
       setFurtherKidsCount(0);
       setHasLaufendeSGB(false);
       setHasLaufendeMehraufwand(false);
+      label = "Alleinstehend (Grundbetrag)";
     } else if (preset === "partner") {
       setHasFirstPerson(true);
       setFirstPersonReason("a"); // gesetzliche Unterhaltspflicht
       setAdditionalPersonsCount(0);
       setHasKindergeld(false);
       setHasKind2(false);
+      label = "Ehegatten/Unterhalt";
     } else if (preset === "alleinKind") {
       setHasFirstPerson(true);
       setFirstPersonReason("a"); // Unterhalt first child
@@ -140,6 +187,7 @@ export default function PKontoCalculator() {
       setHasKind4(false);
       setHasKind5(false);
       setHasFurtherKids(false);
+      label = "Alleinstehend mit 1 Kind";
     } else if (preset === "familie") {
       setHasFirstPerson(true);
       setFirstPersonReason("a"); // Partner (Unterhalt)
@@ -155,11 +203,18 @@ export default function PKontoCalculator() {
       setHasKind4(false);
       setHasKind5(false);
       setHasFurtherKids(false);
+      label = "Familie (Partner, 2 Kinder)";
     }
+
+    logGesetzeslotseActivity(
+      "calculation",
+      "P-Konto Berechnung durchgeführt",
+      `Vorlage geladen: ${label}. Neuer Freibetrag wird berechnet.`
+    );
   };
 
   // Calculations
-  const iiiTotal = baseAllowance + (hasFirstPerson ? firstPersonAllowance : 0) + (additionalPersonsCount > 0 ? (additionalPersonsCount * 326.04) : 0);
+  const iiiTotal = baseAllowance + (hasFirstPerson ? firstPersonAllowance : 0) + (additionalPersonsCount > 0 ? (additionalPersonsCount * additionalPersonAllowance) : 0);
 
   const kindergeldSum = hasKindergeld ? (
     kind1Amount + 
@@ -214,7 +269,7 @@ export default function PKontoCalculator() {
       doc.setFontSize(7);
       doc.setTextColor(80, 80, 80);
       doc.text("Arbeitsgemeinschaft Schuldnerberatung der Verbände (AG SBV) vom 21.09.2021", 15, 30);
-      doc.text("in Absprache mit der Deutschen Kreditwirtschaft (DK) – Stand: 01.07.2025", 195, 30, { align: "right" });
+      doc.text(`in Absprache mit der Deutschen Kreditwirtschaft (DK) – Stand: ${limits.standLabel}`, 195, 30, { align: "right" });
       
       doc.setLineWidth(0.3);
       doc.setDrawColor(0);
@@ -260,22 +315,22 @@ export default function PKontoCalculator() {
       doc.setFont("helvetica", "normal");
       doc.text("[X] Grundfreibetrag des Schuldners (= Kontoinhaber) derzeit (§ 899 Abs. 1 ZPO i.V.m. § 850c)", 17, 107.5);
       doc.setFont("helvetica", "bold");
-      doc.text("in Höhe von 1.560,00 EUR", 192, 107.5, { align: "right" });
+      doc.text(`in Höhe von ${baseAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`, 192, 107.5, { align: "right" });
 
       // First person
       doc.setFont("helvetica", "normal");
       doc.text(`[${hasFirstPerson ? "X" : " "}] Erhöhungsbetrag für die erste Person derzeit (a: ${firstPersonReason === "a" ? "Ja" : "Nein"}, b: ${firstPersonReason === "b" ? "Ja" : "Nein"}, c: ${firstPersonReason === "c" ? "Ja" : "Nein"})`, 17, 114.5);
       doc.text("   a) gesetzlicher Unterhalt, b) SGB II/XII Geldleistungen, c) AsylbLG Gelder", 17, 118);
       doc.setFont("helvetica", "bold");
-      doc.text(`in Höhe von ${hasFirstPerson ? "585,23" : "0,00"} EUR`, 192, 114.5, { align: "right" });
+      doc.text(`in Höhe von ${hasFirstPerson ? firstPersonAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0,00"} EUR`, 192, 114.5, { align: "right" });
 
       // Subsequent dependents
       doc.setFont("helvetica", "normal");
       const otherDeps = additionalPersonsCount;
-      doc.text(`[${otherDeps > 0 ? "X" : " "}] Erhöhungsbetrag für ${otherDeps} weitere Person(en) derzeit i.H.v. je 326,04 EUR`, 17, 125);
+      doc.text(`[${otherDeps > 0 ? "X" : " "}] Erhöhungsbetrag für ${otherDeps} weitere Person(en) derzeit i.H.v. je ${additionalPersonAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`, 17, 125);
       doc.text(`   Unterhalt gewährt nach: Grd. [${additionalPersonsReason === "a" ? "X" : " "}] gesetzlich Unterhalt / [${additionalPersonsReason === "b" ? "X" : " "}] SGB / [${additionalPersonsReason === "c" ? "X" : " "}] Asyl`, 17, 128.5);
       doc.setFont("helvetica", "bold");
-      doc.text(`in Höhe von ${(otherDeps * 326.04).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`, 192, 125, { align: "right" });
+      doc.text(`in Höhe von ${(otherDeps * additionalPersonAllowance).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`, 192, 125, { align: "right" });
 
       // SECTION IV TABLE (laufende)
       doc.setFillColor(248, 249, 250);
@@ -358,9 +413,13 @@ export default function PKontoCalculator() {
       doc.text("UrhG-Muster: Das Amtliche Dokument steht unter einer Creative Commons Namensnennung-Keine Bearbeitung 3.0 Deutschland Lizenz.", 15, 278);
 
       doc.save(`Amtliche_P_Konto_Bescheinigung_903_ZPO_${ownerName.replace(/\s+/g, "_")}.pdf`);
+      logGesetzeslotseActivity(
+        "calculation",
+        "Bescheinigung als PDF exportiert",
+        `Amtliche P-Konto-Bescheinigung (§ 903 ZPO) für ${ownerName} generiert. Freibetrag: € ${totalMonthlyAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2 })}.`
+      );
     } catch (err) {
       console.error(err);
-      alert("Fehler beim Exportieren des PDFs.");
     }
   };
 
@@ -378,14 +437,21 @@ export default function PKontoCalculator() {
             Interaktiver Vordruck: Pfändungsschutzkonto-Bescheinigung
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-450 mt-1 max-w-3xl">
-            Passen Sie das offizielle, vom Senat Berlin empfohlene AG SBV-Formular (Stand: 01.07.2025) direkt über die inline Eingabefelder und Checkboxen an. Die Summen und Zuweisungen kalkulieren vollautomatisch.
+            Passen Sie das offizielle, vom Senat Berlin empfohlene AG SBV-Formular (Tabelle Stand: {limits.standLabel}) direkt über die inline Eingabefelder und Checkboxen an. Die Summen und Zuweisungen kalkulieren vollautomatisch.
           </p>
         </div>
         
         {/* Quick exports */}
         <div className="flex gap-2 shrink-0 items-center">
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              logGesetzeslotseActivity(
+                "calculation", 
+                "Druckansicht geöffnet", 
+                `Druckvorschau für P-Konto-Bescheinigung (§ 903 ZPO) geöffnet. Freibetrag: € ${totalMonthlyAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2 })}.`
+              );
+              window.print();
+            }}
             className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 dark:border-slate-700 text-slate-700 dark:text-slate-350 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
             title="Drucken über die Druckvorschau des Browsers"
           >
@@ -405,10 +471,20 @@ export default function PKontoCalculator() {
       </div>
 
       {/* Preset selector bar */}
-      <div className="bg-slate-50 dark:bg-slate-950/35 p-3 rounded-xl border border-slate-150 dark:border-slate-850 mb-5 text-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5">
-          <span className="font-bold text-slate-750 dark:text-slate-300">Vorlage laden:</span>
-          <p className="text-[10px] text-slate-450">Setzt Standard-Parameter im Dokument ein.</p>
+      <div className="bg-slate-50 dark:bg-slate-950/35 p-3 rounded-xl border border-slate-150 dark:border-slate-850 mb-5 text-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-1.5 border-r border-slate-200 dark:border-slate-800 pr-3">
+            <span className="font-bold text-slate-750 dark:text-slate-300">Stichtag der Pfändungstabelle:</span>
+            <input
+              type="date"
+              value={calculationDate}
+              onChange={(e) => setCalculationDate(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2 py-0.5 font-bold text-slate-800 dark:text-slate-300 text-[11px] focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-transparent cursor-pointer"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-750 dark:text-slate-300">Vorlage laden:</span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <button
@@ -449,7 +525,7 @@ export default function PKontoCalculator() {
           
           <div className="border-t border-b border-slate-955 dark:border-slate-805 py-1.5 px-3 text-[9px] flex justify-between mt-3 text-slate-600 dark:text-slate-400">
             <span>Arbeitsgemeinschaft Schuldnerberatung der Verbände (AG SBV) vom 21.09.2021</span>
-            <span className="font-bold dark:text-emerald-450">Stand: 01.07.2025</span>
+            <span className="font-bold dark:text-emerald-450">Stand: {limits.standLabel}</span>
             <span>In Absprache mit der Deutschen Kreditwirtschaft (DK)</span>
           </div>
         </div>
@@ -639,11 +715,11 @@ export default function PKontoCalculator() {
               <div className="flex items-start gap-2 max-w-lg">
                 <span className="font-bold border px-1 bg-slate-50 dark:bg-slate-900">X</span>
                 <div>
-                  <span className="font-bold block">Grundfreibetrag des Schuldners: 1.560,00 €</span>
+                  <span className="font-bold block">Grundfreibetrag des Schuldners: {baseAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
                   <span className="text-[10px] text-slate-450 block">Gesetzlicher Sockelfreibetrag gem. §§ 899 Abs. 1 i.V.m. 850c ZPO</span>
                 </div>
               </div>
-              <span className="font-mono font-black text-xs text-slate-800 dark:text-slate-200">1.560,00 €</span>
+              <span className="font-mono font-black text-xs text-slate-800 dark:text-slate-200">{baseAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
             </div>
 
             {/* 2. Erhöhung 1. Person */}
@@ -657,7 +733,7 @@ export default function PKontoCalculator() {
                 />
                 <div>
                   <span className="font-bold block text-slate-850 dark:text-slate-100">
-                    Erhöhungsbetrag für die erste Person derzeit: 585,23 €
+                    Erhöhungsbetrag für die erste Person derzeit: {firstPersonAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                   </span>
                   <p className="text-[10px] text-slate-450">
                     Wird gewährt für Ehepartner, erste(s) leibliches Kind oder Lebenspartner auf Grundlage von:
@@ -697,7 +773,7 @@ export default function PKontoCalculator() {
                 </div>
               </div>
               <span className="font-mono font-black text-xs text-slate-800 dark:text-slate-200">
-                {hasFirstPerson ? "585,23 €" : "0,00 €"}
+                {hasFirstPerson ? `${firstPersonAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : "0,00 €"}
               </span>
             </div>
 
@@ -722,10 +798,10 @@ export default function PKontoCalculator() {
                       className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-1.5 py-0.5 font-bold text-slate-800 dark:text-slate-300 text-[10px]"
                     >
                       <option value={0}>0 Personen</option>
-                      <option value={1}>1 weitere Person (326,04 €)</option>
-                      <option value={2}>2 weitere Personen (652,08 €)</option>
-                      <option value={3}>3 weitere Personen (978,12 €)</option>
-                      <option value={4}>4+ weitere Personen (1.304,16 €)</option>
+                      <option value={1}>1 weitere Person ({additionalPersonAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €)</option>
+                      <option value={2}>2 weitere Personen ({(additionalPersonAllowance * 2).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €)</option>
+                      <option value={3}>3 weitere Personen ({(additionalPersonAllowance * 3).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €)</option>
+                      <option value={4}>4+ weitere Personen ({(additionalPersonAllowance * 4).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €)</option>
                     </select>
                   </div>
                   <p className="text-[10px] text-slate-450 mt-1">
@@ -766,7 +842,7 @@ export default function PKontoCalculator() {
                 </div>
               </div>
               <span className="font-mono font-black text-xs text-slate-800 dark:text-slate-200">
-                {(additionalPersonsCount * 326.04).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                {(additionalPersonsCount * additionalPersonAllowance).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
               </span>
             </div>
 
@@ -1103,6 +1179,101 @@ export default function PKontoCalculator() {
               </span>
             </div>
 
+            {/* COMPARISON AND GARNISHABLE ALERT WIDGET */}
+            <div className={`mt-4 p-4 rounded-xl border space-y-3 transition-all duration-300 ${
+              debtorNetIncome > totalMonthlyAllowance
+                ? "border-red-500/30 bg-red-500/[0.02] dark:border-red-900/40 dark:bg-red-950/[0.02] animate-garnish-alert"
+                : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20"
+            }`} id="garnishable-check-widget">
+              
+              {/* Employment Synchronization Banner */}
+              {isEmployed && employerName ? (
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-2 rounded-lg text-[10.5px] transition-all border gap-1.5 ${
+                  debtorNetIncome > totalMonthlyAllowance
+                    ? "bg-red-500/5 border-red-200/40 text-red-800 dark:text-red-300"
+                    : "bg-indigo-50/60 dark:bg-indigo-950/20 border-indigo-100/50 dark:border-indigo-900/30 text-indigo-800 dark:text-indigo-300"
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block h-2 w-2 rounded-full ${
+                      debtorNetIncome > totalMonthlyAllowance ? "bg-red-500 animate-pulse" : "bg-indigo-500"
+                    }`}></span>
+                    <span className="font-medium">Abgeglichen mit Bestandsaufnahme (Arbeitnehmer):</span>
+                  </div>
+                  <span className="font-bold truncate">{employerName}</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-2 rounded-lg bg-amber-500/[0.04] dark:bg-amber-950/10 border border-amber-500/10 text-[10.5px] text-amber-800 dark:text-amber-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+                    <span className="font-medium">Abgeglichen mit Bestandsaufnahme:</span>
+                  </div>
+                  <span className="font-bold">Erwerbslos / Sonstiges</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <div>
+                  <span className="font-bold text-slate-850 dark:text-slate-100 block text-xs">
+                    Tatsächliches Nettoeinkommen des Schuldners
+                  </span>
+                  <span className="text-[10px] text-slate-450 block">
+                    Geben Sie das monatliche Einkommen zur Überprüfung der Pfändbarkeit ein
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-xs text-slate-500">EUR</span>
+                  <input
+                    type="number"
+                    value={debtorNetIncome || ""}
+                    onChange={(e) => setDebtorNetIncome(parseFloat(e.target.value) || 0)}
+                    className="w-28 text-right font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-transparent text-slate-850 dark:text-slate-250"
+                    placeholder="z.B. 1850"
+                  />
+                </div>
+              </div>
+
+              {debtorNetIncome > totalMonthlyAllowance ? (
+                <div className="p-3.5 rounded-lg border border-red-200 dark:border-red-950 bg-red-500/10 dark:bg-red-950/25 text-slate-950 dark:text-slate-100">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="font-black text-xs text-red-700 dark:text-red-400 uppercase tracking-wide">
+                          Achtung: Pfändungsfreigrenze überschritten!
+                        </span>
+                        <span className="font-mono text-xs font-black bg-red-600 text-white dark:bg-red-550 px-2 py-0.5 rounded animate-pulse animate-duration-1000">
+                          +{ (debtorNetIncome - totalMonthlyAllowance).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } EUR
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-red-650 dark:text-red-350 mt-1.5 leading-normal">
+                        Das eingegebene Nettoeinkommen liegt über dem monatlichen Gesamtfreibetrag von <strong className="font-bold">{totalMonthlyAllowance.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR</strong>.
+                      </p>
+                      <div className="mt-2.5 border-t border-red-200/50 dark:border-red-900/50 pt-2 flex justify-between items-center text-[10.5px]">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Potenziell pfändbarer Betrag:</span>
+                        <span className="font-mono font-black text-sm text-red-700 dark:text-red-400">
+                          EUR { (debtorNetIncome - totalMonthlyAllowance).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : debtorNetIncome > 0 ? (
+                <div className="p-3 rounded-lg border border-emerald-200 dark:border-emerald-950 bg-emerald-500/5 dark:bg-emerald-950/15 text-slate-950 dark:text-slate-100">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-450 shrink-0" />
+                    <div>
+                      <span className="font-bold text-xs text-emerald-800 dark:text-emerald-400">
+                        Einkommen geschützt
+                      </span>
+                      <p className="text-[10px] text-emerald-650 dark:text-emerald-350 mt-0.5 leading-none">
+                        Das monatliche Nettoeinkommen liegt vollständig innerhalb des Freibetrags. Es ist kein pfändbarer Betrag vorhanden.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
           </div>
         </div>
 
@@ -1213,7 +1384,7 @@ export default function PKontoCalculator() {
         {/* Lower guidelines */}
         <div className="text-[7.5px] text-slate-450 dark:text-slate-500 pt-3 border-t border-slate-150 dark:border-slate-805 space-y-1 select-none leading-relaxed">
           <p>
-            1 Die Freibeträge werden jährlich zum 01.07. angepasst. (Verbindliche Tabelle ab dem 1. Juli 2025 gilt bundesweit f. Kreditinstitute).
+            1 Die Freibeträge werden jährlich zum 01.07. angepasst. ({limits.footnoteLabel}).
           </p>
           <p>
             2 Bei jedem Kind ist der Geburtsmonat und das Geburtsjahr in das Vordruckblatt einzutragen, um unrechtmäßige Bezüge auszuschließen.

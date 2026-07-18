@@ -414,18 +414,23 @@ export default function LukasAssistant() {
         // Lukas speaks back to the user celebrating the automatic addition of the debt:
         setTimeout(() => {
           let claimsSummary = "";
+          let pageMemorizedText = "";
           for (const c of claimsList) {
             const pageInfo = c.mostRecentPageNumber ? `\n  • **Aktuellste Seite im Schreiben:** Seite ${c.mostRecentPageNumber}` : "";
             claimsSummary += `• **Gläubiger:** ${c.creditorName || "Unbekannt"}
   • **Forderungshöhe:** € ${(c.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
   • **Aktenzeichen:** ${c.fileReference || "Nicht ausgewiesen"}
   • **Kategorie:** ${c.category || "Konsum"}${pageInfo}\n\n`;
+
+            if (c.mostRecentPageNumber) {
+              pageMemorizedText += `• Für **${c.creditorName || "Unbekannt"}** habe ich mir gemerkt: Das aktuellste Forderungsschreiben befindet sich auf **Seite ${c.mostRecentPageNumber}** der hochgeladenen PDF.\n`;
+            }
           }
 
           const autoReplyText = `Ich habe Ihr Dokument **${file.name}** erfolgreich analysiert und alle Details extrahiert! 
 
 Folgende Forderung(en) im Gläubigerverzeichnis wurde(n) **direkt und lückenlos erfasst**:
-${claimsSummary}Der Fall wurde dem aktiven Mandanten zugeordnet. Sie müssen nichts weiter tun!`;
+${claimsSummary}${pageMemorizedText ? `📝 **Seitenerkennung im Dokument:**\n${pageMemorizedText}\n` : ""}Der Fall wurde dem aktiven Mandanten zugeordnet. Sie müssen nichts weiter tun!`;
 
           setMessages((prev) => [
             ...prev,
