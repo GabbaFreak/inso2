@@ -206,40 +206,40 @@ app.post("/api/parse-document", async (req, res) => {
     };
 
     const promptText = `
-Sie sind ein hochpräziser KI-Schschnittstellenassistent für die Schuldnerberatungsstelle Gesetzeslotse BERLIN.
-Ihre Aufgabe ist es, das beigefügte Dokument (z.B. einen gescannten Schuhkarton-Inhalt mit mehreren Briefen, Mahnbescheiden, Vollstreckungskopien, Ratenvereinbarungen, Gläubigerschreiben) gründlich und vollständig zu analysieren.
+Sie sind ein hochpräziser KI-Schnittstellenassistent für die Schuldnerberatungsstelle Gesetzeslotse BERLIN.
+Ihre Aufgabe ist es, das beigefügte Dokument (z.B. einen gescannten Schuhkarton-Inhalt mit mehreren Briefen, Mahnbescheiden, Vollstreckungsbescheiden, Ratenvereinbarungen, Gläubigerschreiben) gründlich und vollständig zu analysieren.
 Oftmals hat ein Mandant einen riesigen Papierstapel unsortiert abfotografiert oder als einzelne PDF hochgeladen ("Schuhkarton-Prinzip").
 
-**SCHUHKARTON-AUSWERTUNGS-REGELN (ESSENTIELL):**
-1. **Mehrere Forderungen trennen:** Gehen Sie das Dokument Seite für Seite durch. Jede separate rechtliche Angelegenheit (erkennbar an einem eigenen Aktenzeichen/Geschäftszeichen des Inkassos oder des Gläubigers, einem eigenen Anschreiben, einem anderen Erstellungsdatum oder einem anderen Ursprungsgläubiger) MUSS als separates Element im Array 'claims' zurückgegeben werden. Mehrere Anschreiben dürfen NIEMALS in einer einzigen Forderung zusammengefasst werden, nur weil sie im selben PDF enthalten sind!
-2. **Klares Aktenzeichen-Grouping:** Jede Forderungsangelegenheit hat normalerweise ihr eigenes Aktenzeichen (z.B. "LT0823937H", "YY0920037", "8770880102-0", "9579051468-0", "ZO1814976"). Wenn im Stapel Briefe mit unterschiedlichen Aktenzeichen liegen, erstellen Sie dafür zwingend SEPARATE Posten, selbst wenn der Sender derselbe ist (z.B. coeo Inkasso mit zwei verschiedenen Aktenzeichen sind zwei separate Claims!).
-3. **Gläubiger-Rollen-Präzision:**
-   - **originalCreditor (Auftraggeber / Ursprünglicher Gläubiger):** Das Unternehmen, bei dem die ursprüngliche Schuld entstand (z.B. "Drillisch Logistik GmbH", "Vodafone GmbH", "eBay GmbH", "Telekom"). Steht im Brief oft als "Forderung der Firma...", "unsere Mandantin...", "Auftraggeber:".
-   - **debtCollector (Inkassounternehmen / Bevollmächtigter Vertreter / Kanzlei):** Die Stelle, die den Brief verfasst hat und das Geld eintreibt (z.B. "HFG Inkasso GmbH", "coeo Inkasso GmbH", "KSP Kanzlei Dr. Seegers, Dr. Frankenheim", "Lowell", "EOS", "Korn Kanzlei").
-   - **creditorName:** Dies ist der primäre Kommunikations- und Verhandlungspartner für das Gläubigerverzeichnis. Dies MUSS immer der 'debtCollector' (das Inkassounternehmen oder die Kanzlei) sein, da die Schuldnerberatung mit diesen verhandelt. Falls kein Inkasso/Vertreter eingeschaltet ist und der Gläubiger selbst mahnt, tragen Sie den Ursprungsgläubiger hier ein (z.B. "Vodafone GmbH").
-4. **Anschriften auslesen:** Extrahieren Sie die vollständige Postanschrift (Straße, PLZ, Ort) des Inkassounternehmens / Vertreters (bzw. des Gläubigers, falls kein Inkassodienst existiert). Diese steht meist im Briefkopf oder der Fußzeile (z.B. "Zirkusweg 1, 20359 Hamburg" oder "Kieler Straße 16, 41540 Dormagen").
-5. **Summen tages- und cent-genau bestimmen:**
-   - Suchen Sie das tagesaktuelle Saldo oder die Gesamtforderungssumme (amount) der jeweiligen Forderung im jeweiligen Schreiben (z.B. "Gesamtforderung in Höhe von EUR 1.970,04", "Gesamtforderung von EUR 7.628,23", "Gesamtbetrag in Höhe von 173,00 EUR", "Gesamtforderung EUR 557,01", "Summe 588,69").
-   - Wenn eine detaillierte Forderungsaufstellung (Tabelle) vorliegt, analysieren Sie diese genau:
-     - **principalAmount (Reine Hauptforderung):** Der ursprüngliche Rechnungsbetrag ("Hauptsache", "Hauptforderung", z.B. 165,21 EUR).
-     - **interestAmount (Zinsen):** Die Summe aller Verzugszinsen, Zinsrückstände oder laufenden Zinsen ("Zinsen auf Hauptsache", z.B. 55,12 EUR + 27,35 EUR = 82,47 EUR).
-     - **feesAmount (Kosten und Gebühren):** Alle sonstigen Inkassokosten, Mahnkosten, Einigungsgebühren, Adressermittlungskosten, Pfändungskosten, Gerichts- und Vertretungskosten ("Gebühr", "Auslagen", z.B. 58,50 + 11,70 + 20,00 ...).
-6. **Mahn- & Vollstreckungs-Status:**
-   - Wenn ein Schreiben gerichtliche Schritte androht ("Vollstreckungsbescheid", "Mahnbescheid", "Zwangsvollstreckung", "Pfändung", "Gerichtsvollzieher") oder es sich um einen echten Titel handelt, setzen Sie den Status auf 'tituliert'. Sonst setzen Sie ihn auf 'offen'.
-   - Falls ein Mahnbescheid oder Vollstreckungsbescheid vorliegt, versuchen Sie die gerichtlichen Posten (mbPrincipal, mbInterestArrears, mbCourtCosts etc.) exakt zuzuordnen.
-7. **Dokumenten-Datum:**
-   - Bestimmen Sie das genaue Erstellungsdatum des jeweiligen Briefes im Format YYYY-MM-DD (z.B. "02.12.2024", "25.04.2025", "07.11.2025", "16.07.2024", "01.09.2023"). Dieses Datum dient als Stand der Abrechnung für diese Forderung (titledDate).
+**ESSENTIELLE REGELN FÜR DIE AUSWERTUNG VON GERICHTLICHEN NOTFRISTEN / MAHN- & VOLLSTRECKUNGSBESCHEIDEN (HÖCHSTE PRIORITÄT):**
+1. **Gerichtliche Titel zwingend erkennen:**
+   - Wenn Sie ein Dokument eines Amtsgerichts sehen (z.B. "Amtsgericht Schleswig - Zentrales Mahngericht", "Amtsgericht Coburg", etc.) mit dem Titel **Vollstreckungsbescheid** oder **Mahnbescheid** (auch erkennbar an Phrasen wie "NGSBESCHEID aufgrund des am ... zugestellten Mahnbescheids" oder "VOLLSTRECKUNGSBESCHEID" am Seitenrand/Seitenkopf), MÜSSEN Sie dieses zwingend als eigenständige Forderung (Claim) auslesen!
+2. **Gläubiger-Zuordnung bei Gerichtsbescheiden:**
+   - Der **Gläubiger (creditorName)** ist NICHT das Amtsgericht, sondern der im Bescheid genannte **Antragsteller** (z.B. "mobilcom-debitel GmbH" oder "Telefonica Germany GmbH & Co. OHG").
+   - Der **Vertreter / Inkassodienst (debtCollector)** ist der im Bescheid genannte **Prozessbevollmächtigte** (z.B. "Rechtsanwälte Hörnlein & Feyler" oder "coeo Inkasso"). Tragen Sie diesen Namen auch als primären Ansprechpartner im Feld 'creditorName' ein, da die Beratung direkt mit dem Bevollmächtigten verhandelt.
+   - Das **Aktenzeichen (fileReference)** ist die Geschäftsnummer des Gerichts (z.B. "16-9700776-0-3" oder "16714541309"). Suchen Sie nach dem Feld "Geschäftsnummer des Amtsgerichts" oder "Az.".
+3. **Gerichtliche Beträge (mb-Felder) exakt auslesen:**
+   - **mbPrincipal (Hauptforderung):** Die Summe der Hauptforderungen (unter "I. Hauptforderung" bzw. "Hauptsache", z.B. "387,98" oder "749,21").
+   - **mbInterestArrears (Ausgerechnete Zinsrückstände):** Zinsrückstände oder ausgerechnete Zinsen bis zum Erlass des Bescheids (z.B. "5,59" oder "6,65").
+   - **mbCourtCosts (Gerichtskosten):** Die Gerichtsgebühren (unter "II. 1. Gerichtskosten: Gebühr", z.B. "32,00").
+   - **mbClaimantExpenses (Auslagen des Antragstellers):** Die Kosten des Prozessbevollmächtigten (z.B. Gebühren nach Nr. 3305, 3308, Auslagen, z.B. "51,75" oder "15,75 + 22,50 + 13,50 = 51,75").
+   - **mbExtraFees (Mahn- und sonstige Kosten / Inkassokosten):** Nebenkosten wie Mahnkosten der Parteien, Inkassokosten oder Auskunftsgebühren (unter "III. Andere Nebenforderungen" oder "Mahn- und sonstige Kosten", z.B. "20,00" Mahnkosten, "3,70" Auskünfte, "70,20" Inkassokosten, "70,20" Anwaltsvergütung - Gesamtsumme z.B. "164,10").
+   - **mbCalculatedInterest (Vom Antragsteller ausgerechnete Zinsen):** Zinsbetrag aus dem Zinsfeld (z.B. "5,59").
+   - **mbCurrentInterest (Laufende Zinsen):** Textliche Beschreibung der laufenden Zinsansprüche (z.B. "5 Prozentpunkte über dem Basiszinssatz").
+   - Die Gesamtsumme (**amount**) ist der Endbetrag des Vollstreckungsbescheids / Mahnbescheids (z.B. "641,42" oder "1315,43").
+4. **Worttrennung über Seitenübergänge:**
+   - Manchmal sind Überschriften am Seitenübergang getrennt (z.B. steht am Ende von Seite 4 "VOLLSTRECK" und am Anfang von Seite 5 "NGSBESCHEID"). Setzen Sie diese gedanklich zusammen, um den Dokumenttyp "Vollstreckungsbescheid" fehlerfrei zu erkennen.
+5. **Umgang mit fehlerhafter Seitenausrichtung (Drehungen):**
+   - Achtung: Einige Seiten im PDF (wie z.B. die coeo Forderungsaufstellungen auf den Seiten 10 bis 23) sind möglicherweise um 180 Grad gedreht (stehen auf dem Kopf). Sie MÜSSEN diese Seiten im Geiste umdrehen und den Text mit derselben absoluten Präzision und Sorgfalt auslesen! Ignorieren Sie Drehungen und lesen Sie alle Beträge, Aktenzeichen, Daten und Gläubigernamen fehlerfrei aus.
 
-8. **WICHTIG: Umgang mit Vergleichsangeboten / Ratenzahlungsangeboten (Duplicate-Prevention):**
-   - Wenn ein Schreiben ein Ratenzahlungsangebot oder einen Vergleichsrabatt enthält (z.B. "Zahlen Sie einmalig 173,00 EUR statt 264,88 EUR bis zum 28.11.2025 zur gütlichen Einigung"), darf dieses Schreiben NICHT als separate neue Forderung (Claim) mit dem reduzierten Betrag (173 EUR) angelegt werden. Das würde das Gesamtergebnis verdoppeln und verfälschen!
-   - Die primäre Forderung (Claim) entspricht immer dem tatsächlichen, unreduzierten Gesamtbetrag (z.B. amount = 264.88).
-   - Das Vergleichsangebot selbst (z.B. die angebotenen 173,00 EUR) wird im Array 'offers' der jeweiligen Forderung erfasst.
-   - Wenn Sie einen Stapel haben, der z.B. einen Mahnbescheid und später ein günstiges Vergleichsangebot zu demselben Aktenzeichen enthält, fassen Sie diese im selben Claim zusammen und tragen das Angebot im Array 'offers' ein.
-
-9. **Seitennummer des aktuellsten Forderungsschreibens (Umgang mit mehrseitigen Dokumenten):**
-   - Bestimmen Sie genau, auf welcher Seite (1-basierte Seitennummer des gesamten übermittelten PDF-Dokuments) sich das aktuellste, rechtlich gültige/jüngste Forderungsschreiben für diese Angelegenheit befindet. 
-   - Falls z.B. coeo Inkasso zu einem Aktenzeichen Dokumente auf Seite 5, 12 und 18 vorlegt, wovon der Brief auf Seite 18 das aktuellste Datum trägt, legen Sie 18 als 'mostRecentPageNumber' fest.
-   - Jedes extrahierte 'claim'-Objekt MUSS dieses Feld 'mostRecentPageNumber' (als numerischen Wert) enthalten. Wenn das übertragene Dokument nur eine Seite besitzt, ist der Wert 1.
+**WEITERE ALLGEMEINE SCHUHKARTON-AUSWERTUNGS-REGELN:**
+1. **Mehrere Forderungen trennen:** Gehen Sie das Dokument Seite für Seite durch. Jede separate rechtliche Angelegenheit (erkennbar an einem eigenen Aktenzeichen des Inkassos oder des Gläubigers, einem eigenen Anschreiben, einem anderen Erstellungsdatum oder einem anderen Ursprungsgläubiger) MUSS als separates Element im Array 'claims' zurückgegeben werden.
+2. **Klares Aktenzeichen-Grouping:** Jede Forderungsangelegenheit hat normalerweise ihr eigenes Aktenzeichen. Wenn im Stapel Briefe mit unterschiedlichen Aktenzeichen liegen, erstellen Sie dafür zwingend SEPARATE Posten.
+3. **Vergleichsangebote / Ratenzahlungsangeboten (Duplicate-Prevention):**
+   - Wenn ein Schreiben ein Ratenzahlungsangebot oder einen Vergleichsrabatt enthält (z.B. "Zahlen Sie einmalig 780,00 EUR statt 944,94 EUR bis zum 17.05.2025 zur gütlichen Einigung"), darf dieses Schreiben NICHT als separate neue Forderung (Claim) mit dem reduzierten Betrag (780 EUR) angelegt werden.
+   - Die primäre Forderung (Claim) entspricht immer dem unreduzierten Gesamtbetrag (z.B. amount = 944.94).
+   - Das Vergleichsangebot selbst (die angebotenen 780,00 EUR) wird im Array 'offers' erfasst.
+4. **Seitennummer des aktuellsten Forderungsschreibens:**
+   - Bestimmen Sie genau, auf welcher Seite (1-basierte Seitennummer des gesamten übermittelten PDF-Dokuments) sich das aktuellste, rechtlich gültige/jüngste Forderungsschreiben für diese Angelegenheit befindet. Jedes extrahierte 'claim'-Objekt MUSS dieses Feld 'mostRecentPageNumber' (als numerischen Wert) enthalten. Wenn das übertragene Dokument nur eine Seite besitzt, ist der Wert 1.
 
 Geben Sie ein valides JSON-Objekt zurück mit dem einzigen Wurzel-Schlüssel 'claims', welcher ein Array von strukturierten Forderungsobjekten enthält. Tragen Sie Beträge immer als numerische Zahlen und niemals als Text (Strings mit € oder EUR) ein. Sorgen Sie für eine lückenlose und hochpräzise Erfassung aller im Schuhkarton-Stapel befindlichen Dokumente!
 `;

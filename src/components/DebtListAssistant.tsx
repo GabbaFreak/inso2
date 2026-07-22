@@ -842,16 +842,29 @@ export default function DebtListAssistant() {
               }
 
               const dateNew = parseToTime(parsedData.titledDate);
-              const dateExisting = parseToTime(matchedDebt.titledDate || (matchedDebt.createdAt ? matchedDebt.createdAt.split("T")[0] : undefined));
+              const dateExisting = matchedDebt.titledDate ? parseToTime(matchedDebt.titledDate) : 0;
 
-              if (dateNew < dateExisting && dateNew > 0 && dateExisting > 0) {
-                // The incoming document is OLDER. Ignore the main claim details, but still append any offers!
-                updated[matchIndex] = {
-                  ...matchedDebt,
-                  offers: [...existingOffers, ...newOffersToAppend]
-                };
+              let shouldOverwrite = false;
+              let reason = "";
+
+              if (!matchedDebt.titledDate && parsedData.titledDate) {
+                shouldOverwrite = true;
+                reason = "Bestehende Forderung hatte kein Belegdatum. Mit neu eingelesenem Beleg aktualisiert.";
+              } else if (matchedDebt.status !== "tituliert" && finalStatus === "tituliert") {
+                shouldOverwrite = true;
+                reason = "Forderung wurde gerichtlich tituliert. Status und Beträge wurden aktualisiert.";
+              } else if (
+                matchedDebt.titledWith === "Gerichtlicher Mahnbescheid" && 
+                parsedData.titledWith === "Gerichtlicher Vollstreckungsbescheid"
+              ) {
+                shouldOverwrite = true;
+                reason = "Gerichtlicher Vollstreckungsbescheid erhalten. Mahnbescheid aktualisiert.";
               } else if (dateNew > dateExisting && dateNew > 0) {
-                // The incoming document is NEWER. Overwrite core attributes!
+                shouldOverwrite = true;
+                reason = `Neuerer Beleg (vom ${parsedData.titledDate}) erhalten. Forderung aktualisiert.`;
+              }
+
+              if (shouldOverwrite) {
                 updated[matchIndex] = {
                   ...matchedDebt,
                   offers: [...existingOffers, ...newOffersToAppend],
@@ -876,7 +889,6 @@ export default function DebtListAssistant() {
                   mbCurrentInterest: parsedData.mbCurrentInterest || matchedDebt.mbCurrentInterest
                 };
               } else {
-                // Same or undefined dates: fallback to standard merge
                 updated[matchIndex] = {
                   ...matchedDebt,
                   offers: [...existingOffers, ...newOffersToAppend],
@@ -884,12 +896,19 @@ export default function DebtListAssistant() {
                   debtCollector: matchedDebt.debtCollector || parsedData.debtCollector,
                   street: matchedDebt.street || parsedData.street,
                   city: matchedDebt.city || parsedData.city,
-                  status: parsedData.status === "tituliert" ? "tituliert" : matchedDebt.status,
+                  status: (parsedData.status === "tituliert" || matchedDebt.status === "tituliert") ? "tituliert" : matchedDebt.status,
                   titledWith: matchedDebt.titledWith || parsedData.titledWith,
                   titledDate: matchedDebt.titledDate || parsedData.titledDate,
                   principalAmount: matchedDebt.principalAmount || finalPrincipal,
                   interestAmount: matchedDebt.interestAmount || finalInterestAmount,
-                  feesAmount: matchedDebt.feesAmount || finalFeesAmount
+                  feesAmount: matchedDebt.feesAmount || finalFeesAmount,
+                  mbPrincipal: matchedDebt.mbPrincipal || parsedData.mbPrincipal,
+                  mbInterestArrears: matchedDebt.mbInterestArrears || parsedData.mbInterestArrears,
+                  mbCourtCosts: matchedDebt.mbCourtCosts || parsedData.mbCourtCosts,
+                  mbClaimantExpenses: matchedDebt.mbClaimantExpenses || parsedData.mbClaimantExpenses,
+                  mbExtraFees: matchedDebt.mbExtraFees || parsedData.mbExtraFees,
+                  mbCalculatedInterest: matchedDebt.mbCalculatedInterest || parsedData.mbCalculatedInterest,
+                  mbCurrentInterest: matchedDebt.mbCurrentInterest || parsedData.mbCurrentInterest
                 };
               }
             } else {
@@ -934,8 +953,27 @@ export default function DebtListAssistant() {
     };
 
     window.addEventListener("gesetzeslotse_add_debt", handleAddEventDebt);
+    
+    const handleProfileChangedExternally = () => {
+      const storedActive = localStorage.getItem("gesetzeslotse_active_profile") || "schmidt";
+      const storedProfiles = localStorage.getItem("gesetzeslotse_profiles");
+      if (storedActive !== activeProfile) {
+        setActiveProfile(storedActive);
+      }
+      if (storedProfiles) {
+        try {
+          const parsed = JSON.parse(storedProfiles);
+          setProfiles(parsed);
+        } catch (e) {
+          console.error("Failed to parse external profiles update", e);
+        }
+      }
+    };
+    window.addEventListener("gesetzeslotse_profile_changed", handleProfileChangedExternally);
+
     return () => {
       window.removeEventListener("gesetzeslotse_add_debt", handleAddEventDebt);
+      window.removeEventListener("gesetzeslotse_profile_changed", handleProfileChangedExternally);
     };
   }, [activeProfile, profiles]);
 
@@ -1262,19 +1300,31 @@ export default function DebtListAssistant() {
             }
 
             const dateNew = parseToTime(newItem.titledDate);
-            const dateExisting = parseToTime(matchedDebt.titledDate || (matchedDebt.createdAt ? matchedDebt.createdAt.split("T")[0] : undefined));
+            const dateExisting = matchedDebt.titledDate ? parseToTime(matchedDebt.titledDate) : 0;
+
+            let shouldOverwrite = false;
+            let reason = "";
+
+            if (!matchedDebt.titledDate && newItem.titledDate) {
+              shouldOverwrite = true;
+              reason = "Bestehende Forderung hatte kein Belegdatum. Mit neu eingelesenem Beleg aktualisiert.";
+            } else if (matchedDebt.status !== "tituliert" && newItem.status === "tituliert") {
+              shouldOverwrite = true;
+              reason = "Forderung wurde gerichtlich tituliert. Status und Beträge wurden aktualisiert.";
+            } else if (
+              matchedDebt.titledWith === "Gerichtlicher Mahnbescheid" && 
+              newItem.titledWith === "Gerichtlicher Vollstreckungsbescheid"
+            ) {
+              shouldOverwrite = true;
+              reason = "Gerichtlicher Vollstreckungsbescheid erhalten. Mahnbescheid aktualisiert.";
+            } else if (dateNew > dateExisting && dateNew > 0) {
+              shouldOverwrite = true;
+              reason = `Neuerer Beleg (vom ${newItem.titledDate}) erhalten. Forderung aktualisiert.`;
+            }
 
             let actionText = "";
 
-            if (dateNew < dateExisting && dateNew > 0 && dateExisting > 0) {
-              // The incoming document is OLDER. Ignore core claim details, but keep offers
-              updated[matchIndex] = {
-                ...matchedDebt,
-                offers: [...existingOffers, ...newOffersToAppend]
-              };
-              actionText = `Älteres Dokument (vom ${newItem.titledDate || "k.A."}) erkannt. Hauptforderung nicht überschrieben, um aktuellen Stand zu wahren. Neue gütliche Angebote (${newOffersToAppend.length} Stück) wurden hinzugefügt.`;
-            } else if (dateNew > dateExisting && dateNew > 0) {
-              // The incoming document is NEWER. Overwrite core fields!
+            if (shouldOverwrite) {
               updated[matchIndex] = {
                 ...matchedDebt,
                 offers: [...existingOffers, ...newOffersToAppend],
@@ -1298,9 +1348,12 @@ export default function DebtListAssistant() {
                 mbCalculatedInterest: newItem.mbCalculatedInterest || matchedDebt.mbCalculatedInterest,
                 mbCurrentInterest: newItem.mbCurrentInterest || matchedDebt.mbCurrentInterest
               };
-              actionText = `Neuerer Beleg (datierter Brief vom ${newItem.titledDate || "k.A."}) erkannt. Die Kanzleidaten wurden von ehemals € ${matchedDebt.amount.toLocaleString("de-DE")} auf neue € ${newItem.amount.toLocaleString("de-DE")} hochgestuft u. aktualisiert.`;
+              if (reason) {
+                actionText = `${reason} (Ehemals € ${matchedDebt.amount.toLocaleString("de-DE")} -> Jetzt € ${newItem.amount.toLocaleString("de-DE")}).`;
+              } else {
+                actionText = `Neuerer Beleg (datierter Brief vom ${newItem.titledDate || "k.A."}) erkannt. Die Kanzleidaten wurden von ehemals € ${matchedDebt.amount.toLocaleString("de-DE")} auf neue € ${newItem.amount.toLocaleString("de-DE")} hochgestuft u. aktualisiert.`;
+              }
             } else {
-              // Same date or missing: merge safely
               updated[matchIndex] = {
                 ...matchedDebt,
                 offers: [...existingOffers, ...newOffersToAppend],
@@ -1308,14 +1361,21 @@ export default function DebtListAssistant() {
                 debtCollector: matchedDebt.debtCollector || newItem.debtCollector,
                 street: matchedDebt.street || newItem.street,
                 city: matchedDebt.city || newItem.city,
-                status: newItem.status === "tituliert" ? "tituliert" : matchedDebt.status,
+                status: (newItem.status === "tituliert" || matchedDebt.status === "tituliert") ? "tituliert" : matchedDebt.status,
                 titledWith: matchedDebt.titledWith || newItem.titledWith,
                 titledDate: matchedDebt.titledDate || newItem.titledDate,
                 principalAmount: matchedDebt.principalAmount || newItem.principalAmount,
                 interestAmount: matchedDebt.interestAmount || newItem.interestAmount,
-                feesAmount: matchedDebt.feesAmount || newItem.feesAmount
+                feesAmount: matchedDebt.feesAmount || newItem.feesAmount,
+                mbPrincipal: matchedDebt.mbPrincipal || newItem.mbPrincipal,
+                mbInterestArrears: matchedDebt.mbInterestArrears || newItem.mbInterestArrears,
+                mbCourtCosts: matchedDebt.mbCourtCosts || newItem.mbCourtCosts,
+                mbClaimantExpenses: matchedDebt.mbClaimantExpenses || newItem.mbClaimantExpenses,
+                mbExtraFees: matchedDebt.mbExtraFees || newItem.mbExtraFees,
+                mbCalculatedInterest: matchedDebt.mbCalculatedInterest || newItem.mbCalculatedInterest,
+                mbCurrentInterest: matchedDebt.mbCurrentInterest || newItem.mbCurrentInterest
               };
-              actionText = `Mögliche Falldublette sicher zusammengeführt. Die Angebote wurden durch ${newOffersToAppend.length} neue gütliche Offerten ergänzt.`;
+              actionText = `Bestehender Fall ist aktueller oder rechtlich weiter fortgeschritten. Neue gütliche Angebote (${newOffersToAppend.length} Stück) wurden hinzugefügt.`;
             }
 
             localDuplicateNotices.push({

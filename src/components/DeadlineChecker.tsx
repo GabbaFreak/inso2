@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Hourglass, Calendar, CheckSquare, AlertTriangle, ArrowRight, ShieldCheck, Trash2 } from "lucide-react";
+import { Hourglass, Calendar, CheckSquare, AlertTriangle, ArrowRight, ShieldCheck, Trash2, Users, Clock, Filter, CalendarDays } from "lucide-react";
 import { logGesetzeslotseActivity } from "../lib/history";
 
 type DocType = "mahnbescheid" | "vollstreckungsbescheid" | "gerichtsvollzieher" | "vermoegensauskunft";
@@ -23,6 +23,10 @@ export default function DeadlineChecker() {
   const [activeDebtorName, setActiveDebtorName] = useState<string>("Maximilian Schmidt");
   const [recordedDeadlines, setRecordedDeadlines] = useState<any[]>([]);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // Weekly planning calendar states
+  const [filterActiveOnly, setFilterActiveOnly] = useState<boolean>(false);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const docs: Record<DocType, DocConfig> = {
     mahnbescheid: {
@@ -167,6 +171,64 @@ export default function DeadlineChecker() {
     setDaysRemaining(diffDays);
     setIsOverdue(diffDays < 0);
   }, [docType, receivedDate]);
+
+  const getWochenAnsichtData = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find the Monday of the current week
+    const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue, etc.
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+    
+    const weeks: {
+      weekNum: number;
+      startDate: Date;
+      endDate: Date;
+      days: { date: Date; isToday: boolean; deadlines: any[] }[];
+    }[] = [];
+    
+    for (let w = 0; w < 5; w++) {
+      const weekStartDate = new Date(monday);
+      weekStartDate.setDate(monday.getDate() + w * 7);
+      
+      const days: { date: Date; isToday: boolean; deadlines: any[] }[] = [];
+      for (let d = 0; d < 7; d++) {
+        const dayDate = new Date(weekStartDate);
+        dayDate.setDate(weekStartDate.getDate() + d);
+        
+        const isDayToday = dayDate.getTime() === today.getTime();
+        
+        const dayDeadlines = recordedDeadlines.filter(item => {
+          if (filterActiveOnly && item.debtorName !== activeDebtorName) return false;
+          
+          const deadDate = new Date(item.receivedDate);
+          deadDate.setDate(deadDate.getDate() + (item.docType === "mahnbescheid" || item.docType === "vollstreckungsbescheid" ? 14 : item.docType === "gerichtsvollzieher" ? 7 : 10));
+          deadDate.setHours(0,0,0,0);
+          
+          return deadDate.getTime() === dayDate.getTime();
+        });
+        
+        days.push({
+          date: dayDate,
+          isToday: isDayToday,
+          deadlines: dayDeadlines
+        });
+      }
+      
+      weeks.push({
+        weekNum: w + 1,
+        startDate: weekStartDate,
+        endDate: new Date(days[6].date),
+        days
+      });
+    }
+    
+    return weeks;
+  };
+
+  const wochenData = getWochenAnsichtData();
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900" id="deadline-checker-root">
@@ -354,6 +416,224 @@ export default function DeadlineChecker() {
           </div>
         </div>
       )}
+
+      {/* 30-Tage Kanzlei-Fristenkalender (Weekly Calendar Timeline) */}
+      <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-850 animate-fadeIn" id="kanzlei-planungskalender-section">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
+              <CalendarDays className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400" />
+              Kanzlei-Planungskalender (Wochenansicht – 30 Tage)
+            </h3>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              Kalendarischer Zeitstrahl aller anstehenden gerichtlichen Notfristen zur Ressourcenplanung.
+            </p>
+          </div>
+
+          {/* Quick-Filter Buttons */}
+          <div className="flex items-center gap-2 bg-slate-100/80 dark:bg-slate-950/40 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800 shrink-0">
+            <button
+              onClick={() => setFilterActiveOnly(false)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                !filterActiveOnly
+                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-850 dark:text-white"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              }`}
+            >
+              <Users className="h-3 w-3" />
+              Alle Mandanten
+            </button>
+            <button
+              onClick={() => setFilterActiveOnly(true)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                filterActiveOnly
+                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-850 dark:text-white"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              }`}
+            >
+              <Filter className="h-3 w-3" />
+              Aktiv ({activeDebtorName.split(" ")[0]})
+            </button>
+          </div>
+        </div>
+
+        {/* Calendar Matrix Grid Container */}
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-950/5 p-4 min-w-[760px]">
+          {/* Weekdays header row */}
+          <div className="grid grid-cols-12 gap-2 mb-2 pb-2 border-b border-slate-150 dark:border-slate-800/60 font-mono text-[9px] uppercase font-bold text-slate-400">
+            <div className="col-span-2 text-left pl-2">Kanzlei-Woche</div>
+            <div className="col-span-10 grid grid-cols-7 gap-2">
+              <div className="text-center">Mo</div>
+              <div className="text-center">Di</div>
+              <div className="text-center">Mi</div>
+              <div className="text-center">Do</div>
+              <div className="text-center">Fr</div>
+              <div className="text-center text-rose-500/80">Sa</div>
+              <div className="text-center text-rose-500/80">So</div>
+            </div>
+          </div>
+
+          {/* Weeks Rows */}
+          <div className="space-y-3">
+            {wochenData.map((week) => (
+              <div 
+                key={week.weekNum} 
+                className="grid grid-cols-12 gap-2 items-stretch"
+              >
+                {/* Week Label Card */}
+                <div className="col-span-2 flex flex-col justify-center p-2.5 bg-slate-100/50 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 rounded-xl">
+                  <span className="text-[10px] font-black text-slate-800 dark:text-slate-350">Woche {week.weekNum}</span>
+                  <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                    {week.startDate.getDate().toString().padStart(2, "0")}.{(week.startDate.getMonth() + 1).toString().padStart(2, "0")}.
+                  </span>
+                </div>
+
+                {/* 7 Days of current week */}
+                <div className="col-span-10 grid grid-cols-7 gap-2">
+                  {week.days.map((day, dIdx) => {
+                    const isSelected = selectedDay && selectedDay.getTime() === day.date.getTime();
+                    const hasDeadlines = day.deadlines.length > 0;
+                    
+                    return (
+                      <div
+                        key={dIdx}
+                        onClick={() => setSelectedDay(day.date)}
+                        className={`min-h-[74px] p-1.5 rounded-xl border flex flex-col justify-between transition-all cursor-pointer group relative ${
+                          day.isToday
+                            ? "bg-indigo-600/5 dark:bg-indigo-500/5 border-indigo-600 dark:border-indigo-500 ring-1 ring-indigo-550/25"
+                            : isSelected
+                            ? "bg-slate-200/30 dark:bg-slate-800/30 border-slate-400 dark:border-slate-600"
+                            : "bg-white dark:bg-slate-900 border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-755"
+                        }`}
+                      >
+                        {/* Day indicator & date */}
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[9px] font-mono font-bold ${day.isToday ? "text-indigo-650 dark:text-indigo-400" : "text-slate-400 group-hover:text-slate-605"}`}>
+                            {day.date.getDate().toString().padStart(2, "0")}.{(day.date.getMonth() + 1).toString().padStart(2, "0")}
+                          </span>
+                          {day.isToday && (
+                            <span className="text-[8px] font-black bg-indigo-600 text-white dark:bg-indigo-500/20 dark:text-indigo-400 px-1 rounded uppercase tracking-wider scale-90">
+                              Heute
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Deadlines area in cell */}
+                        <div className="mt-1 space-y-1">
+                          {day.deadlines.slice(0, 2).map((item, itemIdx) => {
+                            let badgeColor = "bg-rose-50 text-rose-700 border-rose-150 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/30";
+                            if (item.docType === "gerichtsvollzieher" || item.docType === "vermoegensauskunft") {
+                              badgeColor = "bg-amber-50 text-amber-700 border-amber-150 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900/30";
+                            }
+                            return (
+                              <div
+                                key={itemIdx}
+                                className={`text-[8px] font-black tracking-tight px-1 py-0.5 rounded border leading-tight truncate ${badgeColor}`}
+                                title={`${item.debtorName}: ${item.docLabel}`}
+                              >
+                                {item.debtorName.split(" ")[0].substring(0, 8)}: {item.docType === "mahnbescheid" ? "Mahn" : item.docType === "vollstreckungsbescheid" ? "Vollst" : item.docType === "gerichtsvollzieher" ? "GV" : "Ausk"}
+                              </div>
+                            );
+                          })}
+                          
+                          {day.deadlines.length > 2 && (
+                            <div className="text-[7px] font-bold text-indigo-600 dark:text-indigo-400 text-center">
+                              + {day.deadlines.length - 2} weitere
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Selected Day Details Panel */}
+        {selectedDay && (() => {
+          const matchingDay = wochenData
+            .flatMap(w => w.days)
+            .find(d => d.date.getTime() === selectedDay.getTime());
+          
+          if (!matchingDay) return null;
+          
+          return (
+            <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/20 animate-fadeIn">
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60 dark:border-slate-800/50">
+                <h4 className="text-xs font-bold text-slate-805 dark:text-slate-100 flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-slate-400" />
+                  Detail-Ansicht für {selectedDay.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDay(null)}
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  Schließen
+                </button>
+              </div>
+
+              {matchingDay.deadlines.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 italic">
+                  An diesem Tag stehen keine gerichtlichen Fristen für die Kanzlei an.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {matchingDay.deadlines.map((item, idx) => {
+                    const received = new Date(item.receivedDate);
+                    const daysRemainingComputed = Math.ceil((selectedDay.getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                    const isOverdueComputed = daysRemainingComputed < 0;
+
+                    return (
+                      <div 
+                        key={idx}
+                        className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded uppercase">
+                              {item.debtorName}
+                            </span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-155">
+                              {item.docLabel}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-normal">
+                            <strong>Zustellung:</strong> {received.toLocaleDateString("de-DE")} | <strong>Notfrist:</strong> {docs[item.docType as DocType]?.daysLimit} Tage
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          {isOverdueComputed ? (
+                            <span className="text-[10px] font-bold bg-red-105 text-red-800 dark:bg-red-950/40 dark:text-red-400 px-2 py-0.5 rounded-md">
+                              Frist abgelaufen!
+                            </span>
+                          ) : (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${daysRemainingComputed <= 3 ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-450" : daysRemainingComputed <= 7 ? "bg-amber-100 text-amber-800 dark:bg-amber-955/20 dark:text-amber-400" : "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400"}`}>
+                              Noch {daysRemainingComputed} Tag{daysRemainingComputed === 1 ? "" : "e"}
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDeadline(item.id)}
+                            className="p-1.5 hover:bg-rose-50 hover:text-red-500 text-slate-400 rounded-lg transition-colors cursor-pointer"
+                            title="Aus Überwachung entfernen"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }

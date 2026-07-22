@@ -9,6 +9,7 @@ import SenateInvoicer from "./components/SenateInvoicer";
 import Scheiternsbescheinigung from "./components/Scheiternsbescheinigung";
 import VollmachtGenerator from "./components/VollmachtGenerator";
 import Schuldenbereinigungsplan from "./components/Schuldenbereinigungsplan";
+import MandantenProfil from "./components/MandantenProfil";
 import { ActivityLog } from "./lib/history";
 import { 
   Building, 
@@ -24,10 +25,11 @@ import {
   ArrowRightLeft,
   Building2,
   FileText,
-  ClipboardList
+  ClipboardList,
+  User
 } from "lucide-react";
 
-type ActiveTab = "pkonto" | "fristen" | "briefe" | "schulden" | "vergleich" | "rechnung" | "scheitern" | "vollmacht" | "bereinigung";
+type ActiveTab = "pkonto" | "fristen" | "briefe" | "schulden" | "vergleich" | "rechnung" | "scheitern" | "vollmacht" | "bereinigung" | "profil";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("schulden");
@@ -37,7 +39,7 @@ export default function App() {
 
   // Determine active phase based on current tab automatically, but allow mechanical overrides
   const getPhaseForTab = (tab: ActiveTab): 1 | 2 | 3 => {
-    if (tab === "schulden" || tab === "pkonto" || tab === "fristen") return 1;
+    if (tab === "schulden" || tab === "pkonto" || tab === "fristen" || tab === "profil") return 1;
     if (tab === "bereinigung" || tab === "vergleich" || tab === "briefe" || tab === "vollmacht") return 2;
     return 3;
   };
@@ -601,6 +603,26 @@ export default function App() {
                         <span className="text-[8px] opacity-75 mt-0.5 block leading-none">Gerichtliche Notfristen</span>
                       </div>
                     </button>
+
+                    {/* Step 4: Mandanten-Profil */}
+                    <button
+                      onClick={() => setActiveTab("profil")}
+                      className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer group h-[88px] ${
+                        activeTab === "profil"
+                          ? "bg-slate-950 text-white border-transparent shadow-sm dark:bg-white dark:text-slate-900"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-850 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                      }`}
+                      id="tab-profil"
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <span className="text-[8px] font-bold tracking-wider uppercase opacity-60">4. Stammdaten</span>
+                        <User className={`h-4 w-4 ${activeTab === 'profil' ? 'text-white dark:text-slate-900' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                      </div>
+                      <div>
+                        <h3 className="text-[11px] font-black leading-tight">Mandanten-Profil</h3>
+                        <span className="text-[8px] opacity-75 mt-0.5 block leading-none">Zentrale Personendaten</span>
+                      </div>
+                    </button>
                   </>
                 )}
 
@@ -748,6 +770,7 @@ export default function App() {
               {activeTab === "scheitern" && <Scheiternsbescheinigung />}
               {activeTab === "vollmacht" && <VollmachtGenerator />}
               {activeTab === "bereinigung" && <Schuldenbereinigungsplan />}
+              {activeTab === "profil" && <MandantenProfil />}
             </div>
 
             {/* Paid Services & Objection Management info area */}
