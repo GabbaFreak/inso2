@@ -20,26 +20,97 @@
 }
 
 @media print {
-  /* Hide everything except our print target container */
+  body {
+    background: white !important;
+    color: black !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    counter-reset: page;
+  }
   body * {
     visibility: hidden;
   }
-  #print-certificate-container, #print-certificate-container * {
-    visibility: visible;
+  .printable-area, .printable-area * {
+    visibility: visible !important;
   }
-  #print-certificate-container {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 1.5cm;
+  .printable-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 0 15mm 0 !important;
     box-shadow: none !important;
     border: none !important;
     background: white !important;
     color: black !important;
   }
-  .no-print {
+  .no-print, nav, header, button, .no-print * {
     display: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 20mm 15mm 20mm 15mm;
+    @bottom-right {
+      content: "Seite " counter(page) " von " counter(pages);
+      font-size: 8pt;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      color: #334155;
+    }
+    @bottom-left {
+      content: "GESETZESLOTSE BERLIN e.V. • Vertrauliche Mandantenunterlage § 305 InsO";
+      font-size: 7.5pt;
+      font-family: Arial, sans-serif;
+      color: #64748b;
+    }
+  }
+
+  /* Repeated running page header on printed pages */
+  .print-page-header {
+    position: fixed;
+    top: -16mm;
+    left: 0;
+    right: 0;
+    height: 12mm;
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 3px;
+    background: white;
+    z-index: 1000;
+  }
+
+  /* Repeated running page footer on printed pages */
+  .print-page-footer {
+    position: fixed;
+    bottom: -14mm;
+    left: 0;
+    right: 0;
+    height: 8mm;
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8pt;
+    font-family: Arial, sans-serif;
+    color: #475569;
+    background: white;
+    z-index: 1000;
+  }
+
+  .print-page-number::after {
+    counter-increment: page;
+    content: "Seite " counter(page);
+    font-weight: bold;
+    color: #0f172a;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    page-break-inside: avoid;
   }
 }

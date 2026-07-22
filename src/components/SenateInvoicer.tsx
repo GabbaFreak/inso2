@@ -15,9 +15,10 @@ import {
   Plus,
   Trash2,
   CheckCircle,
-  BarChart3
+  BarChart3,
+  AlertTriangle
 } from "lucide-react";
-import { jsPDF } from "jspdf";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { DebtItem } from "../types";
 
 export default function SenateInvoicer() {
@@ -75,6 +76,12 @@ export default function SenateInvoicer() {
   const [newDebtorMonth, setNewDebtorMonth] = useState("Juni");
   const [newDebtorStatus, setNewDebtorStatus] = useState("Eingereicht");
 
+  // Profile comparison variables for Plausibilitätsprüfung
+  const [profileName, setProfileName] = useState<string>("Maximilian Schmidt");
+  const [profileDebtsCount, setProfileDebtsCount] = useState<number>(2);
+  const [profileNetIncome, setProfileNetIncome] = useState<number>(1850);
+  const [profileIsEmployed, setProfileIsEmployed] = useState<boolean>(true);
+
   // Sync with localStorage debts portfolio
   useEffect(() => {
     const handleSync = () => {
@@ -83,6 +90,13 @@ export default function SenateInvoicer() {
 
       const name = localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt";
       setDebtorName(name);
+      setProfileName(name);
+
+      const storedNetIncome = parseFloat(localStorage.getItem("gesetzeslotse_active_debtor_net_income") || "0");
+      setProfileNetIncome(storedNetIncome);
+
+      const storedIsEmployed = localStorage.getItem("gesetzeslotse_active_debtor_is_employed") === "true";
+      setProfileIsEmployed(storedIsEmployed);
 
       const portfolioKey = `gesetzeslotse_debts_portfolio_${profile}`;
       const stored = localStorage.getItem(portfolioKey);
@@ -90,11 +104,15 @@ export default function SenateInvoicer() {
         try {
           const debts: DebtItem[] = JSON.parse(stored);
           setCreditorsCount(debts.length);
+          setProfileDebtsCount(debts.length);
           // Set appropriate file references
           setFileReference(`GLB-2026-${profile === "schmidt" ? "3920" : "5512"}`);
         } catch (e) {
           console.error(e);
         }
+      } else {
+        setProfileDebtsCount(0);
+        setCreditorsCount(0);
       }
     };
 
@@ -138,192 +156,377 @@ export default function SenateInvoicer() {
     return getSubtotal() + getVatAmount();
   };
 
-  // PDF Export
-  const downloadInvoicePdf = () => {
+  // Word (DOCX) Export
+  const downloadInvoiceDocx = async () => {
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
+      const docChildren: any[] = [];
+
+      // Header sender
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Gesetzeslotse BERLIN e.V. • Alt-Moabit 90 D • 10559 Berlin",
+              size: 16,
+              color: "64748b",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      // Recipient addresses
+      const recipientLines = modelType === "senat_flat" 
+        ? [
+            "Senatsverwaltung für Justiz, Vielfalt und Antidiskriminierung",
+            "Referat II D - Schuldnerberatungsstelle-Erstattung",
+            "Salzburger Str. 21-25",
+            "10825 Berlin (Schöneberg)"
+          ]
+        : [
+            "Amtsgericht Wedding",
+            "– Zentrale Erstellungsstelle für Beratungshilfe –",
+            "Brunnenplatz 1",
+            "13357 Berlin"
+          ];
+
+      recipientLines.forEach((line, idx) => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                bold: idx === 0,
+                size: 20,
+                color: "0f172a",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
       });
 
-      doc.setFont("helvetica", "normal");
-      
-      // Sender area
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Gesetzeslotse BERLIN e.V. • Alt-Moabit 90 D • 10559 Berlin", 20, 20);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      // Recipient addresses regarding billing model
-      doc.setFontSize(9.5);
-      doc.setTextColor(15, 23, 42);
-      if (modelType === "senat_flat") {
-        doc.setFont("helvetica", "bold");
-        doc.text("Senatsverwaltung für Justiz, Vielfalt und Antidiskriminierung", 20, 30);
-        doc.setFont("helvetica", "normal");
-        doc.text("Referat II D - Schuldnerberatungsstelle-Erstattung", 20, 34);
-        doc.text("Salzburger Str. 21-25", 20, 38);
-        doc.text("10825 Berlin (Schöneberg)", 20, 42);
-      } else {
-        doc.setFont("helvetica", "bold");
-        doc.text("Amtsgericht Wedding", 20, 30);
-        doc.setFont("helvetica", "normal");
-        doc.text("– Zentrale Erstellungsstelle für Beratungshilfe –", 20, 34);
-        doc.text("Brunnenplatz 1", 20, 38);
-        doc.text("13357 Berlin", 20, 42);
-      }
+      // Invoice info block
+      const invoiceInfo = [
+        `Rechnungs-Nr:  ${invoiceNumber}`,
+        `Datum:          ${new Date(billingDate).toLocaleDateString("de-DE")}`,
+        `Kanzlei-Kürzel:  GLB-305/BE`,
+        `Verfahrenspfleg:  Lukas AI`,
+      ];
 
-      // Metadata box right side
-      const rightX = 140;
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Rechnungs-Nr:  ${invoiceNumber}`, rightX, 30);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Datum:          ${new Date(billingDate).toLocaleDateString("de-DE")}`, rightX, 35);
-      doc.text(`Kanzlei-Kürzel:  GLB-305/BE`, rightX, 40);
-      doc.text(`Verfahrenspfleg:  Lukas AI`, rightX, 45);
+      invoiceInfo.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 18,
+                bold: line.startsWith("Rechnungs-Nr"),
+                color: "334155",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
 
-      // Separation Line
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.3);
-      doc.line(20, 52, 190, 52);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
       // Title
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      if (modelType === "senat_flat") {
-        doc.text("ABRECHNUNGS-ANTRAG nach Berliner Kassen-Satzung", 20, 62);
-      } else {
-        doc.text("Festsetzungsantrag gem. § 55 RVG (Beratungshilfe)", 20, 62);
-      }
+      const titleText = modelType === "senat_flat"
+        ? "ABRECHNUNGS-ANTRAG nach Berliner Kassen-Satzung"
+        : "Festsetzungsantrag gem. § 55 RVG (Beratungshilfe)";
 
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text("Hiermit rechnen wir die Aufwendungen für die Unterstützung bei der außergerichtlichen Einigung ab:", 20, 68);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: titleText,
+              bold: true,
+              size: 24,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 100 }
+        })
+      );
 
-      // Client specifications block
-      doc.setFillColor(248, 250, 252);
-      doc.rect(20, 73, 170, 24, "F");
-      doc.rect(20, 73, 170, 24);
-      
-      doc.setFont("helvetica", "bold");
-      doc.text(`MANDANT: ${debtorName}`, 25, 79);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Aktenzeichen:      ${fileReference}`, 25, 84);
-      doc.text(`Gerichts-Geschäftsnummer (BH):   ${shReference}`, 25, 89);
-      doc.text(`Gläubiger im Verzeichnis:          ${creditorsCount} erfasste Parteien`, 25 + 90, 84);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Hiermit rechnen wir die Aufwendungen für die Unterstützung bei der außergerichtlichen Einigung ab:",
+              size: 20,
+              color: "475569",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
 
-      // Table layout for Invoice Positions
-      let y = 108;
-      doc.setFont("helvetica", "bold");
-      doc.text("Position / Abrechnungsposten", 25, y);
-      doc.text("Satz / RVG VV", 130, y);
-      doc.text("Netto-Betrag", 170, y, { align: "right" });
+      // Metadata debtor info
+      const metadataLines = [
+        `Mandant / Schuldner:  ${debtorName}`,
+        `Aktenzeichen:         ${fileReference}`,
+        `Gerichts-Geschäftsnummer (BH): ${shReference}`,
+        `Gläubiger im Verzeichnis: ${creditorsCount} erfasste Parteien`,
+      ];
 
-      doc.line(20, y + 2, 190, y + 2);
-      y += 8;
+      metadataLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "1e293b",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
 
-      doc.setFont("helvetica", "normal");
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Positions Table Title
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Abrechnungsposten:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 100 }
+        })
+      );
+
+      // Add active positions
       if (modelType === "senat_flat") {
         if (flatBasis) {
-          doc.text(`Senats-Grundförderung für anerkannte Stellen (${creditorsCount} Gläubiger)`, 25, y);
-          doc.text("Pauschal", 130, y);
-          doc.text(`EUR ${getFlatRateReward().toFixed(2)}`, 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Senats-Grundförderung für anerkannte Stellen (${creditorsCount} Gläubiger): EUR ${getFlatRateReward().toFixed(2)} (Pauschal)`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
         if (flatScanner) {
-          doc.text("IT-Pauschale / Digitalisierungs-Zuschlag", 25, y);
-          doc.text("Sondertatbest.", 130, y);
-          doc.text("EUR 25.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• IT-Pauschale / Digitalisierungs-Zuschlag: EUR 25.00 (Sondertatbest.)`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
         if (additionalBonus) {
-          doc.text("Erhöhter Beratungsaufwand (Erschwerte Struktur)", 25, y);
-          doc.text("Vergleich", 130, y);
-          doc.text("EUR 75.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Erhöhter Beratungsaufwand (Erschwerte Struktur): EUR 75.00 (Vergleich)`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
       } else {
         if (rvg2503) {
-          doc.text("Geschäftsgebühr (außergerichtliches Verfahren)", 25, y);
-          doc.text("VV 2503", 130, y);
-          doc.text("EUR 85.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Geschäftsgebühr (außergerichtliches Verfahren) VV 2503: EUR 85.00`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
         if (rvg2508) {
-          doc.text("Einigungsgebühr / Einigungszuschlag", 25, y);
-          doc.text("VV 2508", 130, y);
-          doc.text("EUR 150.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Einigungsgebühr / Einigungszuschlag VV 2508: EUR 150.00`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
         if (rvg7002) {
-          doc.text("Pauschale für Entgelte Post & Telekommunikation", 25, y);
-          doc.text("VV 7002", 130, y);
-          doc.text("EUR 20.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Pauschale für Entgelte Post & Telekommunikation VV 7002: EUR 20.00`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
         if (rvg7000) {
-          doc.text("Ablichtungs- & Scannerpauschale", 25, y);
-          doc.text("VV 7000", 130, y);
-          doc.text("EUR 15.00", 170, y, { align: "right" });
-          y += 8;
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `• Ablichtungs- & Scannerpauschale VV 7000: EUR 15.00`,
+                  size: 20,
+                })
+              ],
+              spacing: { after: 60 }
+            })
+          );
         }
       }
 
-      doc.line(20, y - 2, 190, y - 2);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 150 } }));
 
       // Calculations block
-      y += 4;
-      doc.setFont("helvetica", "normal");
-      doc.text("Zwischensumme (Netto):", 120, y);
-      doc.text(`EUR ${getSubtotal().toFixed(2)}`, 170, y, { align: "right" });
-      y += 6;
+      const calcLines = [
+        `Zwischensumme (Netto):     EUR ${getSubtotal().toFixed(2)}`,
+        `Umsatzsteuer (19%):        EUR ${getVatAmount().toFixed(2)}`,
+        `Auszuzahlender Erstattungsbetrag: EUR ${getTotalPrice().toFixed(2)}`,
+      ];
 
-      doc.text("Umsatzsteuer (19%):", 120, y);
-      doc.text(`EUR ${getVatAmount().toFixed(2)}`, 170, y, { align: "right" });
-      y += 8;
+      calcLines.forEach((line, idx) => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                bold: idx === 2,
+                size: idx === 2 ? 22 : 20,
+                color: idx === 2 ? "1e3a8a" : "334155",
+              })
+            ],
+            spacing: { after: 60 }
+          })
+        );
+      });
 
-      doc.line(115, y - 4, 190, y - 4);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10.5);
-      doc.text("Auszuzahlender Erstattungsbetrag:", 120, y);
-      doc.text(`EUR ${getTotalPrice().toFixed(2)}`, 170, y, { align: "right" });
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      // Invoicing instructions and banking
-      y += 24;
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "bold");
-      doc.text("BANKVERBINDUNG FÜR DIE ERSTATTUNG:", 20, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Zahlungsempfänger:  ${recipient}`, 20, y + 5);
-      doc.text(`IBAN Kontonr:       ${iban}`, 20, y + 10);
-      doc.text(`Institut/BIC:       ${bankName} / ${bic}`, 20, y + 15);
+      // Bankverbindung
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "BANKVERBINDUNG FÜR DIE ERSTATTUNG:",
+              bold: true,
+              size: 20,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
 
-      // Senate rules stamp note
-      y += 26;
-      doc.setFillColor(241, 245, 249);
-      doc.rect(20, y, 170, 15, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(30, 41, 59);
-      doc.setFontSize(7.5);
-      doc.text("Geprüft nach den Leitlinien für die Gewährung von Kanzlei-Erstattungen im Land Berlin (Stand 2026).", 23, y + 5);
-      doc.setFont("helvetica", "normal");
-      doc.text("Mit Übersendung dieser Urkunde wird die ordnungsgemäße Durchführung des außergerichtlichen Vergleichsversuchs gem. § 305 Abs. 1 Nr. 1 InsO versichert.", 23, y + 10);
+      const bankLines = [
+        `Zahlungsempfänger:  ${recipient}`,
+        `IBAN Kontonr:       ${iban}`,
+        `Institut/BIC:       ${bankName} / ${bic}`,
+      ];
 
-      // Signatures base
-      y += 28;
-      doc.setDrawColor(203, 213, 225);
-      doc.line(20, y + 10, 80, y + 10);
-      doc.line(130, y + 10, 190, y + 10);
-      
-      doc.setTextColor(100, 116, 139);
-      doc.text("Kanzleimanagement / Sachbearbeiter", 20, y + 13.5);
-      doc.text("Stempel & amtliche Signatur der Stelle", 130, y + 13.5);
+      bankLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "475569",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
 
-      doc.save(`Rechnung_Senat_${invoiceNumber}_${debtorName.replace(/\s+/g, "_")}.pdf`);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Guidelines stamp note
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Geprüft nach den Leitlinien für die Gewährung von Kanzlei-Erstattungen im Land Berlin (Stand 2026).\nMit Übersendung dieser Urkunde wird die ordnungsgemäße Durchführung des außergerichtlichen Vergleichsversuchs gem. § 305 Abs. 1 Nr. 1 InsO versichert.",
+              italics: true,
+              size: 16,
+              color: "64748b",
+            })
+          ],
+          spacing: { after: 250 }
+        })
+      );
+
+      // Signatures
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "____________________________                      ____________________________",
+              size: 18,
+            })
+          ]
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Kanzleimanagement / Sachbearbeiter                  Stempel & amtliche Signatur",
+              size: 18,
+              color: "64748b",
+            })
+          ]
+        })
+      );
+
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Rechnung_Senat_${invoiceNumber}_${debtorName.replace(/\s+/g, "_")}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error(e);
-      alert("Fehler beim Erzeugen der Senats-Abrechnung.");
+      alert("Fehler beim Erzeugen der Senats-Abrechnung als Word-Dokument.");
     }
   };
 
@@ -449,7 +652,75 @@ export default function SenateInvoicer() {
       </div>
 
       {subTab === "invoice" && (
-        <div className="grid gap-6 grid-cols-1 xl:grid-cols-12">
+        <div className="space-y-4" id="invoice-subtab-container">
+          
+          {/* Plausibilitätsprüfung & Warnungen */}
+          {(() => {
+            const warnings: string[] = [];
+            
+            // 1. Name Check
+            if (debtorName.trim().toLowerCase() !== profileName.trim().toLowerCase()) {
+              warnings.push(
+                `Abweichender Name: Rechnungs-Empfänger lautet "${debtorName}", die Kanzleiakte verzeichnet jedoch "${profileName}".`
+              );
+            }
+
+            // 2. Creditor Count Check
+            if (creditorsCount !== profileDebtsCount) {
+              warnings.push(
+                `Abweichende Gläubiger-Anzahl: Der Abrechnung liegen ${creditorsCount} Gläubiger zugrunde, in der Kanzleiakte sind jedoch ${profileDebtsCount} erfasst.`
+              );
+            }
+
+            // 3. RVG Beratungshilfe/Income Check
+            if (modelType === "rvg_itemized" && profileNetIncome > 1400) {
+              warnings.push(
+                `Beratungshilfe-Prüfung (RVG): Mandant hat mtl. Nettoeinkommen von EUR ${profileNetIncome.toLocaleString("de-DE", { minimumFractionDigits: 2 })}. Beratungshilfe wird bei Einkommen über ca. 1.400 EUR vom Amtsgericht i.d.R. abgelehnt.`
+              );
+            }
+
+            // 4. Senat Flat/Income Check
+            if (modelType === "senat_flat" && profileNetIncome > 2000) {
+              warnings.push(
+                `Senats-Prüfung: Mandant hat mtl. Nettoeinkommen von EUR ${profileNetIncome.toLocaleString("de-DE", { minimumFractionDigits: 2 })}. Gemäß Berliner AV-InsO sind Gutverdiener ggf. eigenanteilspflichtig.`
+              );
+            }
+
+            if (warnings.length > 0) {
+              return (
+                <div className="p-4 bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900 rounded-xl space-y-2 text-xs text-amber-850 dark:text-amber-300 shadow-sm animate-fadeIn" id="plausibility-check-panel">
+                  <div className="flex items-center gap-2 font-black text-amber-900 dark:text-amber-200">
+                    <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Automatische Plausibilitätsprüfung d. Abrechnung (§ 305 f. InsO / AV-InsO)</span>
+                    <span className="ml-auto bg-amber-105 text-amber-900 dark:bg-amber-900 dark:text-amber-100 px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wide">
+                      {warnings.length} Hinweis{warnings.length > 1 ? "e" : ""}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-amber-700 dark:text-amber-400">
+                    Die Kanzleisoftware hat die Abrechnungs-Eckdaten mit den im <b>Mandantenprofil</b> hinterlegten Realdaten abgeglichen:
+                  </div>
+                  <ul className="space-y-1 pl-4 list-disc text-[11px] font-semibold text-amber-900 dark:text-amber-300">
+                    {warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                  <div className="text-[9px] text-amber-550 dark:text-amber-500 italic pt-1 border-t border-amber-150 dark:border-amber-900/40">
+                    ⚠️ Wichtig: Bitte korrigieren Sie die Rechnungsdaten oder aktualisieren Sie das Mandantenprofil, um Abrechnungs-Konflikte mit der Justizkasse oder dem Gericht zu vermeiden.
+                  </div>
+                </div>
+              );
+            } else {
+              return (
+                <div className="p-4 bg-emerald-55/50 border border-emerald-100 dark:bg-emerald-950/10 dark:border-emerald-900 rounded-xl flex items-center gap-2.5 text-xs text-emerald-850 dark:text-emerald-450 shadow-sm animate-fadeIn" id="plausibility-check-success">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <span className="font-extrabold text-emerald-900 dark:text-emerald-300">Plausibilitätsprüfung bestanden:</span>
+                  <span className="text-[11px] text-emerald-800 dark:text-emerald-400">Sämtliche Rechnungsdaten stimmen exakt mit dem Mandantenprofil überein. Abrechnung ist fehlerfrei.</span>
+                </div>
+              );
+            }
+          })()}
+
+          <div className="grid gap-6 grid-cols-1 xl:grid-cols-12">
         {/* Left column: Controls */}
         <div className="col-span-1 xl:col-span-5 space-y-4">
           
@@ -679,12 +950,12 @@ export default function SenateInvoicer() {
             </div>
 
             {/* Document body preview */}
-            <div className="p-6 text-slate-850 max-h-[440px] overflow-y-auto font-sans leading-normal text-xs space-y-4" id="senate-invoice-dina4-prev">
+            <div className="p-6 text-slate-800 max-h-[440px] overflow-y-auto font-sans leading-normal text-xs space-y-4" id="senate-invoice-dina4-prev">
               
               {/* Header Letterhead */}
               <div className="flex justify-between items-start gap-4">
                 <div className="text-[10px] text-slate-400">
-                  <p className="font-bold text-slate-650 uppercase">Gesetzeslotse BERLIN e.V.</p>
+                  <p className="font-bold text-slate-600 uppercase">Gesetzeslotse BERLIN e.V.</p>
                   <p>Alt-Moabit 90 D • 10559 Berlin</p>
                 </div>
                 <div className="text-right text-[10px] font-mono text-slate-500">
@@ -803,26 +1074,26 @@ export default function SenateInvoicer() {
 
                 {/* Subsumptions details */}
                 <div className="border-t border-slate-200 pt-2 space-y-1 font-semibold text-right">
-                  <div className="flex justify-end gap-12 text-slate-550 text-[10px]">
+                  <div className="flex justify-end gap-12 text-slate-500 text-[10px]">
                     <span>Zwischensumme Netto:</span>
                     <span className="font-mono text-slate-900">€ {getSubtotal().toFixed(2)}</span>
                   </div>
                   {withVat && (
-                    <div className="flex justify-end gap-12 text-slate-550 text-[10px]">
+                    <div className="flex justify-end gap-12 text-slate-500 text-[10px]">
                       <span>Umsatzsteuer (19%):</span>
                       <span className="font-mono text-slate-900">€ {getVatAmount().toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-end gap-12 text-[11px] font-black font-sans text-rose-650 pt-1.5 border-t border-slate-100">
+                  <div className="flex justify-end gap-12 text-[11px] font-black font-sans text-rose-600 pt-1.5 border-t border-slate-100">
                     <span>Erstattungsbetrag (GESAMT):</span>
-                    <span className="font-mono text-rose-650">€ {getTotalPrice().toFixed(2)}</span>
+                    <span className="font-mono text-rose-600">€ {getTotalPrice().toFixed(2)}</span>
                   </div>
                 </div>
               </div>
 
               {/* Bank Transfer Instructions */}
               <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-500 leading-normal">
-                <span className="font-black text-slate-750 block uppercase text-[8px] tracking-wider mb-1">Empfänger-Bankverbindung der anerkannten Stelle:</span>
+                <span className="font-black text-slate-700 block uppercase text-[8px] tracking-wider mb-1">Empfänger-Bankverbindung der anerkannten Stelle:</span>
                 <p>Begünstigter: <b className="text-slate-800">{recipient}</b> • Bank: <b>{bankName}</b></p>
                 <p>IBAN: <b className="text-slate-800 font-mono">{iban}</b> • BIC: <b className="font-mono">{bic}</b></p>
               </div>
@@ -840,11 +1111,11 @@ export default function SenateInvoicer() {
               </button>
 
               <button
-                onClick={downloadInvoicePdf}
+                onClick={downloadInvoiceDocx}
                 className="py-2.5 px-4 bg-slate-900 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
               >
                 <Download className="h-4 w-4 text-amber-400" />
-                Gebührenbescheid als PDF sichern
+                Gebührenbescheid als Word (DOCX) sichern
               </button>
             </div>
 
@@ -861,6 +1132,7 @@ export default function SenateInvoicer() {
 
         </div>
       </div>
+    </div>
       )}
 
       {subTab === "stats" && (

@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FileDown, Copy, Check, FileText, Send, User, MapPin, Plus, Trash2, Bookmark, Save, Sparkles, FolderHeart, Eye, Search, X } from "lucide-react";
+import { FileDown, Copy, Check, FileText, Send, User, MapPin, Plus, Trash2, Bookmark, Save, Sparkles, FolderHeart, Eye, Search, X, RotateCcw, Download, Printer } from "lucide-react";
 import { LetterData, LetterTemplateType, Creditor } from "../types";
 import { logGesetzeslotseActivity } from "../lib/history";
+import { exportElementToPdf } from "../lib/pdfExport";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { jsPDF } from "jspdf";
 
 export default function LetterGenerator() {
   const [templateType, setTemplateType] = useState<LetterTemplateType>("ratenzahlung");
@@ -23,6 +26,11 @@ export default function LetterGenerator() {
   const [showSaveSuccess, setShowSaveSuccess] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [previewTab, setPreviewTab] = useState<"editor" | "din5008">("din5008");
+  const [editedLetterText, setEditedLetterText] = useState<string>("");
+  const [isEdited, setIsEdited] = useState<boolean>(false);
+  const [exportFormat, setExportFormat] = useState<"pdf" | "docx">("pdf");
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const formatAmount = (amt?: string) => {
     if (!amt) return "-";
@@ -278,7 +286,8 @@ Gesetzeslotse BERLIN Schuldnerberatung
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(getLetterContent());
+    const textToCopy = editedLetterText || getLetterContent();
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
 
@@ -292,6 +301,117 @@ Gesetzeslotse BERLIN Schuldnerberatung
       "Kanzlei-Briefkopie erstellt",
       `Schreiben "${templateLabel}" für ${formData.senderName} an ${formData.creditorName} in die Zwischenablage kopiert.`
     );
+  };
+
+  // Sync edited text with form data unless customized
+  useEffect(() => {
+    setEditedLetterText(getLetterContent());
+    setIsEdited(false);
+  }, [
+    templateType, 
+    formData.senderName, 
+    formData.senderStreet, 
+    formData.senderCity, 
+    formData.creditorName, 
+    formData.creditorStreet, 
+    formData.creditorCity, 
+    formData.fileReference, 
+    formData.debtAmount, 
+    formData.installmentAmount, 
+    formData.date
+  ]);
+
+  const handleExportDocx = async () => {
+    try {
+      const docChildren: any[] = [];
+      const lines = editedLetterText.split("\n");
+      
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        const isBold = trimmed.startsWith("Betreff:") || 
+                        trimmed.startsWith("An:") || 
+                        trimmed.startsWith("An die:") || 
+                        trimmed.startsWith("An den/die") || 
+                        trimmed.startsWith("Datum:") || 
+                        trimmed.startsWith("Sehr geehrte") || 
+                        trimmed.startsWith("Mit freundlichen") || 
+                        trimmed.startsWith("Gesetzeslotse") ||
+                        trimmed.startsWith("In Vertretung") ||
+                        trimmed.startsWith("Betreff: Außergerichtlicher");
+        
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 22, // 11pt
+                bold: isBold,
+                color: "1e293b", // slate 800
+              })
+            ],
+            spacing: { after: 120 }
+          })
+        );
+      });
+
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const normalizedName = formData.creditorName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      link.href = url;
+      link.download = `Kanzlei_Schreiben_${templateType}_${normalizedName}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      logGesetzeslotseActivity(
+        "letter",
+        "Schreiben als DOCX exportiert",
+        `Kanzleischreiben für ${formData.senderName} an ${formData.creditorName} als Word-Dokument (.docx) exportiert.`
+      );
+    } catch (error) {
+      console.error("DOCX generation of letter failed", error);
+      alert("Fehler beim Erstellen der Word-Datei.");
+    }
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      if (!showPrintModal) {
+        setShowPrintModal(true);
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      const normalizedName = formData.creditorName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      await exportElementToPdf("printable-letter-container", `Kanzlei_Schreiben_${templateType}_${normalizedName}.pdf`);
+
+      logGesetzeslotseActivity(
+        "letter",
+        "Schreiben als PDF exportiert",
+        `Kanzleischreiben für ${formData.senderName} an ${formData.creditorName} als PDF exportiert.`
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Fehler beim Erstellen der PDF-Datei.");
+    }
+  };
+
+  const handleExportMain = () => {
+    if (exportFormat === "pdf") {
+      handleExportPdf();
+    } else {
+      handleExportDocx();
+    }
   };
 
   return (
@@ -531,37 +651,266 @@ Gesetzeslotse BERLIN Schuldnerberatung
         {/* Dynamic Letter Preview Canvas */}
         <div className="col-span-1 xl:col-span-7 flex flex-col justify-between">
           <div className="border border-slate-200 rounded-xl bg-slate-50 dark:border-slate-800 dark:bg-slate-950/50 flex-1 flex flex-col p-4 shadow-inner">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4 dark:border-slate-800">
-              <span className="text-xs font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1.5 font-bold">
-                <FileText className="h-3.5 w-3.5 text-slate-400" />
-                Büro-Entwurf (DIN 5008 Kanzlei-Standard)
-              </span>
-              <button
-                onClick={handleCopy}
-                className="py-1 px-2.5 border border-slate-250 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1 hover:text-slate-900 transition-colors cursor-pointer"
-                id="copy-letter-button"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-600" />
-                    Kopiert!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" />
-                    Entwurf kopieren
-                  </>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4 dark:border-slate-800">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab("din5008")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    previewTab === "din5008"
+                      ? "bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-150"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                  id="preview-tab-din"
+                >
+                  Druck-Vorschau (DIN 5008)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab("editor")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    previewTab === "editor"
+                      ? "bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-150"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                  id="preview-tab-edit"
+                >
+                  Direkt-Editor {isEdited && <span className="inline-block h-2 w-2 rounded-full bg-amber-500 ml-1 animate-pulse" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isEdited && (
+                  <button
+                    onClick={() => {
+                      setEditedLetterText(getLetterContent());
+                      setIsEdited(false);
+                    }}
+                    className="p-1.5 border border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 rounded-lg text-[11px] font-semibold text-slate-650 hover:text-slate-800 dark:text-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Änderungen verwerfen"
+                    id="reset-letter-button"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Verwerfen</span>
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={handleCopy}
+                  className="py-1.5 px-2.5 border border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
+                  id="copy-letter-button"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Kopiert!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Kopieren</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Format Switcher */}
+                <div className="inline-flex p-0.5 bg-slate-200 dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("pdf")}
+                    className={`px-2 py-1 text-[10px] font-extrabold rounded transition-all cursor-pointer ${
+                      exportFormat === "pdf"
+                        ? "bg-rose-600 text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("docx")}
+                    className={`px-2 py-1 text-[10px] font-extrabold rounded transition-all cursor-pointer ${
+                      exportFormat === "docx"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    DOCX
+                  </button>
+                </div>
+
+                {/* Preview & Print Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(true)}
+                  className="py-1.5 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer border border-slate-700"
+                  title="Druckansicht anzeigen"
+                >
+                  <Eye className="h-3.5 w-3.5 text-slate-300" />
+                  <span>Vorschau & Drucken</span>
+                </button>
+
+                {/* Export Button */}
+                <button
+                  type="button"
+                  onClick={handleExportMain}
+                  className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  id="export-letter-main"
+                  title={`Brief als ${exportFormat.toUpperCase()} exportieren`}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Speichern ({exportFormat.toUpperCase()})</span>
+                </button>
+              </div>
             </div>
 
-            <div 
-              ref={letterRef}
-              className="bg-white border select-all border-slate-150 p-6 shadow-sm font-mono text-[10px] leading-relaxed text-slate-800 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 overflow-y-auto max-h-[360px] rounded-lg whitespace-pre-wrap"
-              id="rendered-letter-box"
-            >
-              {getLetterContent()}
-            </div>
+            {previewTab === "editor" ? (
+              <div className="flex-1 flex flex-col">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5 uppercase font-semibold tracking-wider">
+                  Text im Vorschaufenster anpassen (Änderungen werden beim Export/Kopieren beibehalten):
+                </p>
+                <textarea
+                  value={editedLetterText}
+                  onChange={(e) => {
+                    setEditedLetterText(e.target.value);
+                    setIsEdited(true);
+                  }}
+                  className="w-full flex-1 min-h-[350px] p-4 bg-white border border-slate-200 rounded-lg font-mono text-[11px] leading-relaxed text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 shadow-sm"
+                  id="letter-textarea-editor"
+                  placeholder="Inhalt des Briefes..."
+                />
+              </div>
+            ) : (
+              <div 
+                ref={letterRef}
+                className="bg-white border border-slate-200 p-8 shadow-md font-sans text-xs text-slate-800 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 overflow-y-auto max-h-[460px] rounded-lg relative selection:bg-indigo-100"
+                id="rendered-letter-box"
+              >
+                {/* Letter Header/Sender Info DIN 5008 */}
+                <div className="text-[9px] text-slate-400 border-b border-slate-100 pb-1 mb-8 dark:border-slate-800 select-none">
+                  <span className="underline">Gesetzeslotse BERLIN Schuldnerberatung • Littenstraße 10 • 10179 Berlin</span>
+                </div>
+
+                {/* Recipient area */}
+                <div className="mb-10 text-xs">
+                  <p 
+                    className="font-semibold text-slate-900 dark:text-slate-100 hover:bg-indigo-50/50 p-0.5 rounded cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white inline-block min-w-[150px]"
+                    contentEditable={true}
+                    suppressContentEditableWarning={true}
+                    onBlur={(e) => {
+                      setFormData(prev => ({ ...prev, creditorName: e.currentTarget.innerText }));
+                    }}
+                  >
+                    {formData.creditorName}
+                  </p>
+                  <p 
+                    className="hover:bg-indigo-50/50 p-0.5 rounded cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white block"
+                    contentEditable={true}
+                    suppressContentEditableWarning={true}
+                    onBlur={(e) => {
+                      setFormData(prev => ({ ...prev, creditorStreet: e.currentTarget.innerText }));
+                    }}
+                  >
+                    {formData.creditorStreet}
+                  </p>
+                  <p 
+                    className="hover:bg-indigo-50/50 p-0.5 rounded cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white block"
+                    contentEditable={true}
+                    suppressContentEditableWarning={true}
+                    onBlur={(e) => {
+                      setFormData(prev => ({ ...prev, creditorCity: e.currentTarget.innerText }));
+                    }}
+                  >
+                    {formData.creditorCity}
+                  </p>
+                </div>
+
+                {/* Date Area */}
+                <div className="text-right text-xs mb-8">
+                  <p>
+                    Berlin, den{" "}
+                    <span
+                      className="hover:bg-indigo-50/50 p-0.5 rounded cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white inline-block"
+                      contentEditable={true}
+                      suppressContentEditableWarning={true}
+                      onBlur={(e) => {
+                        setFormData(prev => ({ ...prev, date: e.currentTarget.innerText }));
+                      }}
+                    >
+                      {formData.date}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Content Render */}
+                <div className="space-y-4 text-xs leading-relaxed font-sans">
+                  {editedLetterText.split("\n\n").map((para, pIdx) => {
+                    // Check if it's the sender block (we already showed it at the top)
+                    if (pIdx === 0 && (para.includes("Gesetzeslotse BERLIN") || para.includes("Littenstraße 10"))) {
+                      return null; 
+                    }
+                    // Check if it is the recipient address block
+                    if (para.startsWith("An:") || para.startsWith("An die:")) {
+                      return null;
+                    }
+                    if (para.startsWith("Datum:")) {
+                      return null;
+                    }
+
+                    const trimmedPara = para.trim();
+                    const isBetreff = trimmedPara.startsWith("Betreff:") || trimmedPara.startsWith("Konto-");
+                    const isMandant = trimmedPara.startsWith("In Vertretung") || trimmedPara.startsWith("Ihr Zeichen") || trimmedPara.startsWith("Verfahrensbeteiligter") || trimmedPara.startsWith("Gläubiger:") || trimmedPara.startsWith("Schuldner");
+
+                    if (isBetreff) {
+                      return (
+                        <h3 
+                          key={pIdx} 
+                          className="font-bold text-slate-900 dark:text-white text-sm pt-2 pb-1 uppercase tracking-tight hover:bg-indigo-50/50 p-1 rounded transition-colors cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white"
+                          contentEditable={true}
+                          suppressContentEditableWarning={true}
+                          onBlur={(e) => {
+                            const newText = e.currentTarget.innerText;
+                            const paragraphs = editedLetterText.split("\n\n");
+                            paragraphs[pIdx] = newText;
+                            setEditedLetterText(paragraphs.join("\n\n"));
+                            setIsEdited(true);
+                          }}
+                        >
+                          {trimmedPara}
+                        </h3>
+                      );
+                    }
+
+                    if (isMandant) {
+                      return (
+                        <div key={pIdx} className="bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-850 p-2.5 rounded-lg font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                          {trimmedPara.split("\n").map((line, lIdx) => (
+                            <div key={lIdx}>{line}</div>
+                          ))}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <p 
+                        key={pIdx} 
+                        className="whitespace-pre-wrap hover:bg-indigo-50/50 p-1 rounded transition-colors cursor-text focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white"
+                        contentEditable={true}
+                        suppressContentEditableWarning={true}
+                        onBlur={(e) => {
+                          const newText = e.currentTarget.innerText;
+                          const paragraphs = editedLetterText.split("\n\n");
+                          paragraphs[pIdx] = newText;
+                          setEditedLetterText(paragraphs.join("\n\n"));
+                          setIsEdited(true);
+                        }}
+                      >
+                        {trimmedPara}
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex gap-2.5 items-start text-xs text-slate-650 dark:text-slate-350">
@@ -738,6 +1087,126 @@ Gesetzeslotse BERLIN Schuldnerberatung
               >
                 Schließen
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print Preview Modal for Letter */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-amber-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">
+                  Druckansicht (DIN 5008) — Gläubiger-Schreiben
+                </h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="inline-flex p-1 bg-slate-800 rounded-lg border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("pdf")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      exportFormat === "pdf" ? "bg-rose-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("docx")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      exportFormat === "docx" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    DOCX
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportMain}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Speichern ({exportFormat.toUpperCase()})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Letter DIN 5008 Container */}
+            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
+              <div id="printable-letter-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+                
+                {/* Print Running Header */}
+                <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
+                    <span className="font-bold text-slate-900 uppercase">Kanzleischreiben — Gläubigerkorrespondenz</span>
+                  </div>
+                  <div className="font-mono text-slate-500">
+                    Datum: {formData.date}
+                  </div>
+                </div>
+
+                {/* Print Running Footer */}
+                <div className="hidden print-page-footer text-[9px] font-sans text-slate-500">
+                  <span>GESETZESLOTSE BERLIN e.V. • Gläubiger-Korrespondenz</span>
+                  <span className="print-page-number"></span>
+                </div>
+
+                {/* Document Header with Logo */}
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                  <div className="text-right text-[10px] font-sans text-slate-500">
+                    <p className="font-bold text-slate-800">Gesetzeslotse BERLIN e.V.</p>
+                    <p>Littenstraße 10 • 10179 Berlin</p>
+                  </div>
+                </div>
+
+                {/* DIN 5008 Sender Line */}
+                <div className="text-[9px] text-slate-500 border-b border-slate-300 pb-1 font-sans">
+                  Gesetzeslotse BERLIN Schuldnerberatung • Littenstraße 10 • 10179 Berlin
+                </div>
+
+                {/* Recipient Box */}
+                <div className="pt-2 font-sans space-y-0.5 text-xs">
+                  <p className="font-bold">{formData.creditorName}</p>
+                  <p>{formData.creditorStreet}</p>
+                  <p>{formData.creditorCity}</p>
+                </div>
+
+                {/* Date line */}
+                <div className="text-right text-xs font-sans text-slate-700 pt-2">
+                  Berlin, den {formData.date}
+                </div>
+
+                {/* Letter Body */}
+                <div className="pt-4 space-y-4 whitespace-pre-wrap text-xs text-slate-900 font-serif leading-relaxed">
+                  {editedLetterText}
+                </div>
+
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Scale, Landmark, ShieldCheck, Download, AlertCircle, RefreshCw, Printer, CheckCircle, Flame, Check, HelpCircle } from "lucide-react";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { jsPDF } from "jspdf";
 import { getLimitsForDate } from "../data/pKontoLimits";
 import { logGesetzeslotseActivity } from "../lib/history";
@@ -243,8 +244,214 @@ export default function PKontoCalculator() {
     applyPreset("allein");
   };
 
-  // Generates high-fidelity PDF corresponding exactly to the AG SBV official template
+  // Word (DOCX) P-Konto Bescheinigung Export
+  const downloadCertificateDocx = async () => {
+    try {
+      const docChildren: any[] = [];
+
+      // Header title
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "BESCHEINIGUNG NACH § 903 ABS. 1 ZPO",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "PFÄNDUNGSSCHUTZ-BESCHEINIGUNG FÜR P-KONTO",
+              bold: true,
+              size: 30,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      // Section A: Kreditinstitut und Kontoinhaber
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "1. Kreditinstitut & Kontoinhaber:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
+
+      const bankLines = [
+        `Kreditinstitut:  ${bankName}`,
+        `IBAN:            ${ibanValue}`,
+        `Kontoinhaber:    ${ownerName}`,
+        `Geburtsdatum:    ${birthDate}`,
+        `Anschrift:       ${addressLine}`,
+      ];
+
+      bankLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "475569",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Section B: Bescheinigende Stelle
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "2. Bescheinigende Stelle / Person:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
+
+      const agencyLines = [
+        `Bezeichnung:  ${agencyName}`,
+        `Anschrift:    ${agencyStreet}, ${agencyCity}`,
+        `Bereich:      ${agencyContact}`,
+        `Staatlich anerkannte geeignete Stelle gem. § 305 InsO`,
+      ];
+
+      agencyLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "475569",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Section C: Freibeträge
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "3. Bescheinigte monatliche Freibeträge (Stand 2026):",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
+
+      const dependentsCount = (hasFirstPerson ? 1 : 0) + additionalPersonsCount;
+      const dependentsAllowance = (hasFirstPerson ? firstPersonAllowance : 0) + (additionalPersonsCount * additionalPersonAllowance);
+      const otherAllowances = ivTotal;
+
+      const freibetragLines = [
+        `• Grundfreibetrag (§ 902 ZPO): EUR ${baseAllowance.toFixed(2)}`,
+        `• Erhöhungsbetrag (Unterhaltspflichten): EUR ${dependentsAllowance.toFixed(2)} (für ${dependentsCount} Personen)`,
+        `• Sonstige addierte Leistungen (SGB II, AsylbLG, Kindergeld etc.): EUR ${otherAllowances.toFixed(2)}`,
+        `• INSGESAMT BESCHEINIGTER FREIBETRAG: EUR ${totalMonthlyAllowance.toFixed(2)}`,
+      ];
+
+      freibetragLines.forEach((line, idx) => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                bold: idx === 3,
+                size: idx === 3 ? 22 : 20,
+                color: idx === 3 ? "1e3a8a" : "1e293b",
+              })
+            ],
+            spacing: { after: 50 }
+          })
+        );
+      });
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 250 } }));
+
+      // Signatures
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "____________________________                      ____________________________",
+              size: 18,
+            })
+          ]
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Ort, Datum & Unterschrift Kontoinhaber              Stempel & amtliche Unterschrift der Stelle",
+              size: 18,
+              color: "64748b",
+            })
+          ]
+        })
+      );
+
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Amtliche_P_Konto_Bescheinigung_903_ZPO_${ownerName.replace(/\s+/g, "_")}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Fehler beim Erzeugen der P-Konto-Bescheinigung als Word-Dokument.");
+    }
+  };
+
   const downloadCertificatePdf = () => {
+    downloadCertificateDocx();
+    return;
     try {
       const doc = new jsPDF({
         orientation: "portrait",
@@ -462,10 +669,10 @@ export default function PKontoCalculator() {
           <button
             onClick={downloadCertificatePdf}
             className="p-2 bg-slate-950 hover:bg-slate-850 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-            title="Sichert die Bescheinigung als amtliches PDF-Dokument"
+            title="Sichert die Bescheinigung als amtliches Word (DOCX) Dokument"
           >
             <Download className="h-4 w-4 text-amber-400" />
-            Als AG SBV PDF sichern
+            Als AG SBV Word (DOCX) sichern
           </button>
         </div>
       </div>

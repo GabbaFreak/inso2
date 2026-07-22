@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { DebtItem } from "../types";
 import { creditorsDb, DbCreditor } from "../data/creditors_db";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { jsPDF } from "jspdf";
 
 export interface CsvPreviewItem {
@@ -797,6 +798,14 @@ export default function DebtListAssistant() {
             return ref.toLowerCase().replace(/[^a-z0-9]/g, "");
           };
 
+          const cleanName = (n: string) => {
+            if (!n) return "";
+            return n.toLowerCase()
+              .replace(/[^a-z0-9a-öüäöüäß]/g, "")
+              .replace(/(inkasso|gmbh|co|kg|ug|ag|and|und)/g, "")
+              .trim();
+          };
+
           for (const parsedData of claimsList) {
             let finalPrincipal = typeof parsedData.principalAmount === "number" ? parsedData.principalAmount : parseFloat(parsedData.principalAmount || parsedData.amount) || 0;
             let finalInterestAmount = typeof parsedData.interestAmount === "number" ? parsedData.interestAmount : parseFloat(parsedData.interestAmount) || 0;
@@ -820,6 +829,14 @@ export default function DebtListAssistant() {
             let matchIndex = -1;
             if (cRef && cRef.length > 3 && cRef !== "unbekannt") {
               matchIndex = updated.findIndex(d => cleanRef(d.fileReference) === cRef);
+            }
+            if (matchIndex === -1 && parsedData.creditorName) {
+              const pCredName = cleanName(parsedData.creditorName);
+              matchIndex = updated.findIndex(d => {
+                if (!d.creditorName) return false;
+                const dName = cleanName(d.creditorName);
+                return pCredName.length > 2 && dName.length > 2 && (pCredName.includes(dName) || dName.includes(pCredName));
+              });
             }
 
             if (matchIndex !== -1) {
@@ -847,21 +864,24 @@ export default function DebtListAssistant() {
               let shouldOverwrite = false;
               let reason = "";
 
+              const isExistingMahn = matchedDebt.titledWith && matchedDebt.titledWith.toLowerCase().includes("mahn");
+              const isNewVollstreck = ((parsedData.titledWith || "").toLowerCase().includes("vollstreck") || (parsedData.titledWith || "").toLowerCase().includes("titel") || (parsedData.titledWith || "").toLowerCase().includes("bescheid"));
+
               if (!matchedDebt.titledDate && parsedData.titledDate) {
                 shouldOverwrite = true;
                 reason = "Bestehende Forderung hatte kein Belegdatum. Mit neu eingelesenem Beleg aktualisiert.";
               } else if (matchedDebt.status !== "tituliert" && finalStatus === "tituliert") {
                 shouldOverwrite = true;
                 reason = "Forderung wurde gerichtlich tituliert. Status und Beträge wurden aktualisiert.";
-              } else if (
-                matchedDebt.titledWith === "Gerichtlicher Mahnbescheid" && 
-                parsedData.titledWith === "Gerichtlicher Vollstreckungsbescheid"
-              ) {
+              } else if (isExistingMahn && isNewVollstreck) {
                 shouldOverwrite = true;
                 reason = "Gerichtlicher Vollstreckungsbescheid erhalten. Mahnbescheid aktualisiert.";
               } else if (dateNew > dateExisting && dateNew > 0) {
                 shouldOverwrite = true;
                 reason = `Neuerer Beleg (vom ${parsedData.titledDate}) erhalten. Forderung aktualisiert.`;
+              } else if (finalAmount !== matchedDebt.amount && finalAmount > 0) {
+                shouldOverwrite = true;
+                reason = `Forderungsbetrag aktualisiert von EUR ${matchedDebt.amount} auf EUR ${finalAmount}.`;
               }
 
               if (shouldOverwrite) {
@@ -1281,6 +1301,20 @@ export default function DebtListAssistant() {
             }
           }
 
+          // 3. Fallback: Check similar creditor name regardless of amount (since claim might have been updated)
+          if (matchIndex === -1 && newItem.creditorName) {
+            const newItemCredShort = cleanName(newItem.creditorName);
+            matchIndex = updated.findIndex(d => {
+              if (!d.creditorName) return false;
+              const existingCredShort = cleanName(d.creditorName);
+              return newItemCredShort.length > 2 && existingCredShort.length > 2 &&
+                (newItemCredShort.includes(existingCredShort) || existingCredShort.includes(newItemCredShort));
+            });
+            if (matchIndex !== -1) {
+              matchType = "creditor_amount";
+            }
+          }
+
           if (matchIndex !== -1) {
             const matchedDebt = updated[matchIndex];
             const existingOffers = matchedDebt.offers || [];
@@ -1305,21 +1339,24 @@ export default function DebtListAssistant() {
             let shouldOverwrite = false;
             let reason = "";
 
+            const isExistingMahn = matchedDebt.titledWith && matchedDebt.titledWith.toLowerCase().includes("mahn");
+            const isNewVollstreck = ((newItem.titledWith || "").toLowerCase().includes("vollstreck") || (newItem.titledWith || "").toLowerCase().includes("titel") || (newItem.titledWith || "").toLowerCase().includes("bescheid"));
+
             if (!matchedDebt.titledDate && newItem.titledDate) {
               shouldOverwrite = true;
               reason = "Bestehende Forderung hatte kein Belegdatum. Mit neu eingelesenem Beleg aktualisiert.";
             } else if (matchedDebt.status !== "tituliert" && newItem.status === "tituliert") {
               shouldOverwrite = true;
               reason = "Forderung wurde gerichtlich tituliert. Status und Beträge wurden aktualisiert.";
-            } else if (
-              matchedDebt.titledWith === "Gerichtlicher Mahnbescheid" && 
-              newItem.titledWith === "Gerichtlicher Vollstreckungsbescheid"
-            ) {
+            } else if (isExistingMahn && isNewVollstreck) {
               shouldOverwrite = true;
               reason = "Gerichtlicher Vollstreckungsbescheid erhalten. Mahnbescheid aktualisiert.";
             } else if (dateNew > dateExisting && dateNew > 0) {
               shouldOverwrite = true;
               reason = `Neuerer Beleg (vom ${newItem.titledDate}) erhalten. Forderung aktualisiert.`;
+            } else if (newItem.amount !== matchedDebt.amount && newItem.amount > 0) {
+              shouldOverwrite = true;
+              reason = `Forderungsbetrag aktualisiert von EUR ${matchedDebt.amount} auf EUR ${newItem.amount}.`;
             }
 
             let actionText = "";
@@ -1923,8 +1960,211 @@ export default function DebtListAssistant() {
     window.dispatchEvent(new CustomEvent("set_active_tab", { detail: "briefe" }));
   };
 
-  // Professional PDF Export Generator using jsPDF
+  // Professional Word (DOCX) Export Generator
+  const downloadDocx = async () => {
+    try {
+      if (debts.length === 0) {
+        alert("Fügen Sie zuerst Gläubiger hinzu, um eine Aufstellung zu exportieren.");
+        return;
+      }
+
+      const docChildren: any[] = [];
+
+      // Header title
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "GLÄUBIGERVERZEICHNIS & GEBÜHRENPROGNOSE",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "OFFIZIELLES VERZEICHNIS DER VERBINDLICHKEITEN",
+              bold: true,
+              size: 32,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "erstellt durch die Bevollmächtigte Beratungsstelle Gesetzeslotse BERLIN",
+              italics: true,
+              size: 18,
+              color: "475569",
+            })
+          ],
+          spacing: { after: 300 }
+        })
+      );
+
+      // Schuldnerangaben
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Schuldner / Mandant:   ${activeProfile ? activeProfile.toUpperCase() : "Maximilian Schmidt"}\n` +
+                `Gesamtanzahl Gläubiger: ${debts.length} Positionen\n` +
+                `Gesamtverbindlichkeiten: EUR ${debts.reduce((sum, d) => sum + d.amount, 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
+                `Erstellungsdatum:        ${new Date().toLocaleDateString("de-DE")}`,
+              size: 20,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Detail section Title
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Detaillierte Gläubiger-Aufstellung",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 100 }
+        })
+      );
+
+      debts.forEach((d, idx) => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: `${idx + 1}. Gläubiger: ${d.creditorName}`,
+                bold: true,
+                size: 20,
+              })
+            ],
+            spacing: { before: 100, after: 40 }
+          })
+        );
+
+        const posLines = [
+          `• Hauptforderung:  EUR ${d.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+          `• Aktenzeichen:    ${d.fileReference || "Nicht angegeben"}`,
+          `• Urspr. Gläubiger: ${d.originalCreditor || "Selbst"}`,
+          `• Beleg / Nachweis: ${d.hasDocument ? "Ja (Beleg archiviert)" : "Nein (Beweis erfordert)"}`,
+        ];
+
+        posLines.forEach(line => {
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: line,
+                  size: 20,
+                  color: "475569",
+                })
+              ],
+              spacing: { after: 30 }
+            })
+          );
+        });
+      });
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Legal disclaimer
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "RECHTLICHER HINWEIS UND HAFTUNGSAUSSCHLUSS:",
+              bold: true,
+              size: 18,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 60 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Diese Aufstellung wurde nach bestem Wissen auf Basis der vom Schuldner vorgelegten Unterlagen, Mahnschreiben, Vollstreckungsbescheide und Selbstauskünfte erstellt. Die zertifizierte Stelle übernimmt keine Gewähr für die Vollständigkeit aller Gläubigerforderungen. Etwaige nachträglich bekanntwerdende Gläubiger sind unverzüglich nachzupflegen.",
+              size: 16,
+              color: "64748b",
+            })
+          ],
+          spacing: { after: 250 }
+        })
+      );
+
+      // Signatures
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "____________________________                      ____________________________",
+              size: 18,
+            })
+          ]
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Ort, Datum & Unterschrift Mandant                  Akten-Prüfstempel / Gesetzeslotse",
+              size: 18,
+              color: "64748b",
+            })
+          ]
+        })
+      );
+
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Verbindlichkeiten_Aufstellung_Gesetzeslotse_${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("DOCX generation failed:", err);
+      alert("Fehler bei der DOCX-Erstellung. Bitte laden Sie die Seite neu.");
+    }
+  };
+
   const downloadPdf = () => {
+    downloadDocx();
+    return;
     try {
       const doc = new jsPDF({
         orientation: "portrait",
@@ -3792,16 +4032,16 @@ export default function DebtListAssistant() {
 
             {/* Quick exports */}
             <div className="flex gap-1.5 flex-wrap items-center">
-              {/* Professional formatted PDF Export */}
+              {/* Professional formatted DOCX Export */}
               <button
                 onClick={downloadPdf}
                 disabled={debts.length === 0}
                 className="p-1.5 bg-slate-900 border border-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:border-white dark:text-slate-950 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm animate-pulse"
-                title="Als professionelles PDF-Dokument (inkl. Raten-Vergleichsprognose und Unterschriftsfeld) herunterladen"
-                id="download-professional-pdf-button"
+                title="Als professionelles Word-Dokument (inkl. Raten-Vergleichsprognose und Unterschriftsfeld) herunterladen"
+                id="download-professional-docx-button"
               >
                 <Download className="h-3.5 w-3.5 text-amber-400" />
-                <span className="text-[10px]">PDF erhalten</span>
+                <span className="text-[10px]">Word (DOCX) erhalten</span>
               </button>
 
               {/* Semicolon-Separated Excel-Compatible CSV Export */}

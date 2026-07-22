@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 240" width="1180" height="240">
+  <g fill="#0b2240">
+    <!-- Justitia Silhouette / Icon -->
+    <!-- Head & Blindfold -->
+    <circle cx="118" cy="42" r="13" />
+    <path d="M104 40 h28 v5 h-28 z" fill="#ffffff" />
+    
+    <!-- Balance Scale Beam & Strings -->
+    <path d="M152 28 l18 42 m-36 0 l18 -42" stroke="#0b2240" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path d="M118 30 l34 -2 m-34 2 l-34 -2" stroke="#0b2240" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <!-- Right Scale Pan -->
+    <path d="M134 70 q18 12 36 0" stroke="#0b2240" stroke-width="3" fill="none" />
+    <!-- Left Scale Pan -->
+    <path d="M150 28 l-15 35 m30 0 l-15 -35" stroke="#0b2240" stroke-width="2.5" fill="none" />
+    
+    <!-- Torso & Draped Robe -->
+    <path d="M118 55 c-10 8 -16 22 -20 38 c-4 16 -3 32 -6 48 c-3 16 -12 30 -18 45 c-4 10 -8 20 -8 30 h102 c0 -15 -8 -32 -14 -48 c-6 -18 -10 -36 -10 -55 c0 -18 -4 -38 -14 -48 z" />
+    <path d="M108 75 c12 20 18 45 22 70 c3 20 8 40 12 58 h-12 c-6 -18 -10 -38 -14 -58 c-4 -20 -8 -45 -18 -65 z" fill="#081830" opacity="0.3" />
+
+    <!-- Sword in Hand -->
+    <path d="M72 110 l-18 65 h-4 l18 -65 z" />
+    <path d="M50 175 l22 -6" stroke="#0b2240" stroke-width="4" stroke-linecap="round" />
+    <circle cx="48" cy="177" r="4" />
+
+    <!-- Raised Arm holding Scale -->
+    <path d="M125 60 l27 -32" stroke="#0b2240" stroke-width="7" stroke-linecap="round" fill="none" />
+
+    <!-- Base Pedestal -->
+    <path d="M50 218 h136 v10 h-136 z" />
+
+    <!-- Vertical Separator Line -->
+    <line x1="212" y1="35" x2="212" y2="205" stroke="#0b2240" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Brand Typography -->
+    <text x="238" y="122" font-family="'Times New Roman', 'Georgia', serif" font-size="54" font-weight="bold" letter-spacing="3" fill="#0b2240">
+      GESETZESLOTSE BERLIN
+    </text>
+
+    <text x="240" y="170" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="8" fill="#0b2240">
+      ORIENTIERUNG IM RECHTSDSCHUNGEL
+    </text>
+  </g>
+</svg>

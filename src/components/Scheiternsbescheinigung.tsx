@@ -12,9 +12,13 @@ import {
   MapPin, 
   Calendar,
   AlertTriangle,
-  Info 
+  Info,
+  Eye,
+  X 
 } from "lucide-react";
 import { DebtItem } from "../types";
+import { exportElementToPdf } from "../lib/pdfExport";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { jsPDF } from "jspdf";
 
 export default function Scheiternsbescheinigung() {
@@ -46,6 +50,16 @@ export default function Scheiternsbescheinigung() {
   const [competentCourt, setCompetentCourt] = useState("Amtsgericht Wedding - Insolvenzgericht -");
   const [courtFileNumber, setCourtFileNumber] = useState(""); // Placeholder for court's Aktenzeichen
   const [advisorFileNumber, setAdvisorFileNumber] = useState("GL-2026-0815"); // Kanzlei AZ
+  const [exportFormat, setExportFormat] = useState<"pdf" | "docx">("pdf");
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+
+  const handleExportMain = () => {
+    if (exportFormat === "pdf") {
+      handleDownloadPdf();
+    } else {
+      handleDownloadDocx();
+    }
+  };
 
   // Loader and Syncing
   const loadDebtsAndProfile = () => {
@@ -161,213 +175,238 @@ export default function Scheiternsbescheinigung() {
     "Amtsgericht Köpenick - Insolvenzgericht -"
   ];
 
-  const handleDownloadPdf = () => {
+  // Word (DOCX) Scheiternsbescheinigung Export
+  const handleDownloadDocx = async () => {
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
+      const docChildren: any[] = [];
+
+      // Title header
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "BESCHEINIGUNG GEMÄSS § 305 ABS. 1 NR. 1 Inso",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "ÜBER DAS SCHEITERN DES AUSSERGERICHTLICHEN EINIGUNGSVERSUCHS",
+              bold: true,
+              size: 30,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      // Court info
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Zuständiges Insolvenzgericht:  ${competentCourt}\n` +
+                `Aktenzeichen des Gerichts (sofern bekannt): ${courtFileNumber || "Nicht angegeben"}`,
+              size: 20,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+
+      // Section A: Schuldnerangaben
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "1. Angaben zum Schuldner / Mandant:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
+
+      const schuldnerLines = [
+        `Name, Vorname:    ${debtorName}`,
+        `Geburtsdatum:     ${debtorDob}`,
+        `Anschrift:        ${debtorAddress}`,
+      ];
+
+      schuldnerLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "475569",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
       });
 
-      // --- PAGE 1: OFFICIAL BESCHEINIGUNG ---
-      doc.setFont("helvetica", "normal");
-      doc.setFillColor(242, 244, 247);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      // Section A: Amtsgericht Placeholders Header
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.3);
-      doc.rect(15, 12, 180, 24);
-      doc.line(110, 12, 110, 36);
+      // Section B: Bescheinigende Stelle
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "2. Bescheinigende Stelle (nach § 305 Abs. 1 Nr. 1 InsO):",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text("Zuständiges Insolvenzgericht (Amtsgericht):", 18, 17);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(competentCourt, 18, 23);
-      doc.setFontSize(8);
-      doc.text("Geschäftsstelle / Geschäftszeichen (Gericht):", 113, 17);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 110, 120);
-      doc.text(courtFileNumber ? courtFileNumber : "________________________ (wird vom Gericht ausgefüllt)", 113, 23);
-      doc.setTextColor(0, 0, 0);
+      const stelleLines = [
+        `Bezeichnung:  Gesetzeslotse BERLIN e.V.`,
+        `Akkreditierung: Staatlich anerkannte Schuldner- und Verbraucherinsolvenzberatungsstelle`,
+        `Aktenzeichen:  GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}`,
+        `Leitender Sachverständiger: Lukas AI`,
+      ];
 
-      doc.setFontSize(7.5);
-      doc.text(`Aktenzeichen der Kanzlei:  ${advisorFileNumber}`, 18, 32);
-      doc.text("Bescheinigende Stelle: Gesetzeslotse BERLIN / Az. 345/09", 113, 32);
+      stelleLines.forEach(line => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: line,
+                size: 20,
+                color: "475569",
+              })
+            ],
+            spacing: { after: 40 }
+          })
+        );
+      });
 
-      // Main Title
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.text("B E S C H E I N I G U N G", 105, 47, { align: "center" });
-      doc.setFontSize(10);
-      doc.text("über das Scheitern des außergerichtlichen Einigungsversuchs", 105, 52, { align: "center" });
-      doc.text("gemäß § 305 Abs. 1 Nr. 1 InsO", 105, 57, { align: "center" });
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      doc.setLineWidth(0.4);
-      doc.line(15, 61, 195, 61);
+      // Section C: Scheitern des Einigungsversuchs
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "3. Erklärung über das Scheitern des außergerichtlichen Einigungsversuchs:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
 
-      // Debtor Box / II.
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text("1. Angaben zum Schuldner oder zur Schuldnerin:", 15, 67);
-      
-      doc.setFont("helvetica", "normal");
-      doc.rect(15, 70, 180, 24);
-      doc.text(`Name, Vorname:     ${debtorName}`, 18, 75);
-      doc.text(`Geburtsdatum:      ${debtorDob}                 Geburtsort:  ${debtorPob}`, 18, 81);
-      doc.text(`Anschrift:          ${debtorAddress}`, 18, 87);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Es wird hiermit amtlich bescheinigt, dass ein auf der Grundlage persönlicher Beratung und eingehender Prüfung der Vermögensverhältnisse des Schuldners durchgeführter außergerichtlicher Einigungsversuch zur Bereinigung der Schulden auf Basis eines Schuldenbereinigungsplans (Paragraph 305 Absatz 1 Nummer 1 InsO) erfolglos geblieben ist.\n\n` +
+                `Das Scheitern ist eingetreten am: ${new Date(failureDate).toLocaleDateString("de-DE")}\n\n` +
+                `Hauptgrund für das Scheitern des Einigungsplans:\n` +
+                `• ${failureReason}`,
+              size: 20,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
 
-      // III. Certified Body / 2.
-      doc.setFont("helvetica", "bold");
-      doc.text("2. Angaben zur bescheinigenden geeigneten Person oder Stelle (§ 305 Abs. 1 Nr. 1 InsO):", 15, 101);
-      doc.setFont("helvetica", "normal");
-      doc.rect(15, 104, 180, 24);
-      doc.text("Name der Stelle:    Gesetzeslotse BERLIN Schuldnerberatung (staatlich anerkannt gem. § 305 InsO)", 18, 109);
-      doc.text("Anschrift:          Alt-Moabit 90 D, 10559 Berlin", 18, 115);
-      doc.text("Akkreditierung:     Senatsverwaltung für Justiz und Verbraucherschutz Berlin (Geschäftszeichen: IV B 3-345/09)", 18, 121);
-
-      // IV. Certifying Text / 3.
-      doc.setFont("helvetica", "bold");
-      doc.text("3. Bescheinigung des Scheiterns (§ 305 Abs. 1 Nr. 1 InsO):", 15, 135);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      
-      // Paragraphs
-      const p1 = "Als anerkannte Beratungsstelle bescheinigen wir hiermit, dass innerhalb der letzten sechs Monate vor dem beantragten Eröffnungsverfahren ein ernsthafter Versuch unternommen wurde, eine außergerichtliche Einigung mit den Gläubigern auf der Grundlage eines Plans über die Schulbereinigung herbeizuführen.";
-      const p2 = `Der außergerichtliche Einigungsprozess wurde am ${new Date(planSentDate).toLocaleDateString("de-DE")} mit der Versendung des detaillierten Plans begonnen und ist nunmehr am ${new Date(failureDate).toLocaleDateString("de-DE")} endgültig und vollumfänglich gescheitert.`;
-      const p3 = "Das Scheitern ist eingetreten, da:";
-      
-      const splitP1 = doc.splitTextToSize(p1, 178);
-      const splitP2 = doc.splitTextToSize(p2, 178);
-
-      let curY = 140;
-      doc.text(splitP1, 15, curY);
-      curY += splitP2.length * 4.5 + 10;
-      doc.text(splitP2, 15, curY);
-      curY += 12;
-      doc.text(p3, 15, curY);
-
-      curY += 5;
-      doc.setFont("helvetica", "bold");
-      const splitReason = doc.splitTextToSize(failureReason, 170);
-      doc.rect(15, curY, 180, splitReason.length * 4 + 6);
-      doc.text(splitReason, 18, curY + 5);
-
-      curY += splitReason.length * 4 + 12;
-      doc.setFont("helvetica", "normal");
-      doc.text(`Eine spezifizierte Liste aller Gläubiger und Forderungen, die dem Einigungsplan zugrunde lagen, ist als Anlage 1 beigefügt und bildet einen untrennbaren Bestandteil dieser Bescheinigung. Das Verzeichnis weist insgesamt ${debts.length} Gläubiger mit einer Gesamtforderungshöhe von EUR ${totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} aus.`, 15, curY, { maxWidth: 180 });
+      // Section D: Creditor stats
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `4. Verzeichnis der beteiligten Parteien:\n` +
+                `• Anzahl beteiligter Gläubiger: ${debts.length} Parteien\n` +
+                `• Gesamt-Forderungssumme: EUR ${totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+              size: 20,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 250 }
+        })
+      );
 
       // Signatures
-      curY += 24;
-      doc.line(15, curY + 12, 85, curY + 12);
-      doc.line(125, curY + 12, 195, curY + 12);
-      
-      doc.setFontSize(7.5);
-      doc.setTextColor(115, 115, 115);
-      doc.text(`Berlin, den ${new Date().toLocaleDateString("de-DE")}`, 18, curY + 9);
-      doc.text("Ort, Datum der Ausstellung", 18, curY + 16);
-      doc.text("Rechtsgültige Unterschrift & Kanzleistempel", 125, curY + 16);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text("Gesetzeslotse BERLIN e.V.", 125, curY + 8);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "____________________________                      ____________________________",
+              size: 18,
+            })
+          ]
+        })
+      );
 
-      // --- PAGE 2: ANLAGE 1 ---
-      doc.addPage();
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("A n l a g e   1  zur Scheiternsbescheinigung nach § 305 Abs. 1 Nr. 1 InsO", 15, 15);
-      doc.setFontSize(13);
-      doc.text("Gläubiger- und Forderungsverzeichnis (Einigungsplan-Bestandteil)", 15, 21);
-      
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Schuldner: ${debtorName}, geb. am ${debtorDob} • Aktenzeichen: ${advisorFileNumber}`, 15, 27);
-      
-      doc.setLineWidth(0.4);
-      doc.line(15, 30, 195, 30);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Ort, Datum & Unterschrift Schuldner                Stempel & amtliche Unterschrift der Stelle",
+              size: 18,
+              color: "64748b",
+            })
+          ]
+        })
+      );
 
-      // Render Table Headers
-      let tableY = 36;
-      doc.setFillColor(240, 242, 245);
-      doc.rect(15, tableY, 180, 8, "F");
-      doc.rect(15, tableY, 180, 8);
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.text("Nr.", 17, tableY + 5.5);
-      doc.text("Gläubiger Bezeichnung & Anschrift", 24, tableY + 5.5);
-      doc.text("Aktenzeichen / Ref.", 110, tableY + 5.5);
-      doc.text("Vollstreckungsstatus", 145, tableY + 5.5);
-      doc.text("Betrag (EUR)", 191, tableY + 5.5, { align: "right" });
-
-      doc.setFont("helvetica", "normal");
-      tableY += 8;
-
-      debts.forEach((debt, index) => {
-        // Row box
-        doc.rect(15, tableY, 180, 12);
-        
-        doc.text((index + 1).toString(), 17, tableY + 7.5);
-        
-        // Name & city
-        doc.setFont("helvetica", "bold");
-        doc.text(debt.creditorName.substring(0, 42), 24, tableY + 5);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.5);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`${debt.street || ""}, ${debt.city || ""}`, 24, tableY + 9.5);
-        doc.setFontSize(7.5);
-        doc.setTextColor(0, 0, 0);
-
-        doc.text(debt.fileReference || "Unbekannt", 110, tableY + 7);
-        
-        // Status Badge text
-        let statusTxt = "Teilnehmend";
-        if (debt.status === "gescheitert") {
-          statusTxt = "GESCHEITERT (AG)";
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(220, 38, 38); // Red
-        } else if (debt.status === "tituliert") {
-          statusTxt = "Tituliert";
-          doc.setTextColor(190, 24, 74);
-        } else if (debt.status === "verhandlung") {
-          statusTxt = "In Verhandlung";
-          doc.setTextColor(79, 70, 229);
-        } else if (debt.status === "ratenzahlung") {
-          statusTxt = "Ratenzahlung";
-          doc.setTextColor(5, 150, 105);
-        } else {
-          doc.setTextColor(70, 80, 90);
-        }
-        doc.text(statusTxt, 145, tableY + 7);
-        doc.setTextColor(0, 0, 0);
-        doc.setFont("helvetica", "normal");
-
-        doc.setFont("helvetica", "bold");
-        doc.text(`EUR ${debt.amount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 191, tableY + 7, { align: "right" });
-        doc.setFont("helvetica", "normal");
-
-        tableY += 12;
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
       });
 
-      // Total Summaries
-      doc.setFillColor(245, 247, 250);
-      doc.rect(15, tableY, 180, 10, "F");
-      doc.rect(15, tableY, 180, 10);
-      doc.setFont("helvetica", "bold");
-      doc.text("GESAMTE REINIGUNGSSUMME (ALLE GLÄUBIGER):", 24, tableY + 6.5);
-      doc.setTextColor(220, 38, 38);
-      doc.setFontSize(9);
-      doc.text(`EUR ${totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 191, tableY + 6.5, { align: "right" });
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Paragraph_305_Scheiternsbescheinigung_${debtorName.replace(/\s+/g, "_")}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Fehler beim Erzeugen der Scheiternsbescheinigung als Word-Dokument.");
+    }
+  };
 
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(7.5);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Davon dokumentiert gescheiterte Beteiligungen: ${failedCount} von ${debts.length} Gläubigerpositionen.`, 15, tableY + 16);
+  const handleDownloadPdf = async () => {
+    try {
+      if (!showPrintModal) {
+        setShowPrintModal(true);
+        await new Promise((r) => setTimeout(r, 150));
+      }
 
-      // Save PDF
-      doc.save(`Paragraph_305_Scheiternsbescheinigung_${debtorName.replace(/\s+/g, "_")}.pdf`);
+      const fileName = `Paragraph_305_Scheiternsbescheinigung_${debtorName.replace(/\s+/g, "_")}.pdf`;
+      await exportElementToPdf("printable-scheiternsbescheinigung-container", fileName);
     } catch (e) {
       console.error(e);
       alert("Fehler beim Exportieren der Scheiternsbescheinigung als PDF.");
@@ -577,18 +616,66 @@ export default function Scheiternsbescheinigung() {
               )}
             </div>
 
-            <button
-              onClick={handleDownloadPdf}
-              disabled={!isReadyToCertify}
-              className={`w-full py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer ${
-                isReadyToCertify 
-                  ? "bg-slate-950 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-950" 
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-60"
-              }`}
-            >
-              <Download className="h-4 w-4" />
-              Rechtssichere § 305 Bescheinigung (PDF) generieren
-            </button>
+            {/* Format selection & Export controls */}
+            <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Exportformat wählen:</span>
+                <div className="inline-flex p-1 bg-slate-200 dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("pdf")}
+                    className={`px-3 py-1 text-xs font-black rounded transition-all cursor-pointer ${
+                      exportFormat === "pdf"
+                        ? "bg-rose-600 text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("docx")}
+                    className={`px-3 py-1 text-xs font-black rounded transition-all cursor-pointer ${
+                      exportFormat === "docx"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    DOCX
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(true)}
+                  disabled={!isReadyToCertify}
+                  className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                    isReadyToCertify 
+                      ? "bg-slate-800 hover:bg-slate-900 text-white border border-slate-700" 
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-60"
+                  }`}
+                >
+                  <Eye className="h-4 w-4 text-amber-400" />
+                  <span>Vorschau & Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportMain}
+                  disabled={!isReadyToCertify}
+                  className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                    isReadyToCertify 
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700" 
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-60"
+                  }`}
+                >
+                  <Download className="h-4 w-4 text-amber-300" />
+                  <span>Bescheinigung ({exportFormat.toUpperCase()})</span>
+                </button>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -685,6 +772,166 @@ export default function Scheiternsbescheinigung() {
           </div>
         </div>
       </div>
+
+      {/* Print Preview Modal for Scheiternsbescheinigung */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-amber-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">
+                  Druckansicht — Bescheinigung über das Scheitern (§ 305 InsO)
+                </h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="inline-flex p-1 bg-slate-800 rounded-lg border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("pdf")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      exportFormat === "pdf" ? "bg-rose-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("docx")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      exportFormat === "docx" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    DOCX
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportMain}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Speichern ({exportFormat.toUpperCase()})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable § 305 Bescheinigung Document */}
+            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
+              <div id="printable-scheiternsbescheinigung-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+                
+                {/* Print Running Header */}
+                <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
+                    <span className="font-bold text-slate-900 uppercase">§ 305 Abs. 1 Nr. 1 InsO Bescheinigung</span>
+                  </div>
+                  <div className="font-mono text-slate-500">
+                    Kanzlei-AZ: {advisorFileNumber}
+                  </div>
+                </div>
+
+                {/* Print Running Footer */}
+                <div className="hidden print-page-footer text-[9px] font-sans text-slate-500">
+                  <span>GESETZESLOTSE BERLIN e.V. • Amtliche Bescheinigung (§ 305 InsO)</span>
+                  <span className="print-page-number"></span>
+                </div>
+
+                {/* Document Header with Logo & Court Info */}
+                <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-center font-sans">
+                  <div className="flex items-center gap-4">
+                    <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                  </div>
+                  <div className="text-right text-[10px] text-slate-700">
+                    <p className="font-bold uppercase text-slate-900">{competentCourt}</p>
+                    <p className="text-slate-500 font-mono">
+                      Gerichts-Gst.: {courtFileNumber || "Unbekannt"} • Kanzlei-AZ: {advisorFileNumber}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-center py-2 font-sans">
+                  <h1 className="text-base font-black uppercase tracking-tight text-slate-900">
+                    BESCHEINIGUNG GEMÄSS § 305 ABS. 1 NR. 1 Inso
+                  </h1>
+                  <p className="text-[11px] font-bold text-slate-700">über das Erfolglosbleiben des außergerichtlichen Einigungsversuchs</p>
+                </div>
+
+                {/* Section 1: Anerkannte Stelle */}
+                <div className="space-y-1 font-sans border-t border-slate-200 pt-3">
+                  <h3 className="font-bold text-xs uppercase text-slate-900">1. Ausstellende geeignete Stelle (§ 305 Abs. 1 Nr. 1 InsO)</h3>
+                  <p className="text-xs"><b>Gesetzeslotse BERLIN e.V.</b> — Anerkannte Schuldner- und Verbraucherinsolvenzberatung (Alt-Moabit 90 D, 10559 Berlin)</p>
+                </div>
+
+                {/* Section 2: Schuldner */}
+                <div className="space-y-1 font-sans border-t border-slate-200 pt-3">
+                  <h3 className="font-bold text-xs uppercase text-slate-900">2. Angaben zum Schuldner / Mandanten</h3>
+                  <div className="grid grid-cols-2 gap-x-4 text-xs">
+                    <p><b>Name, Vorname:</b> {debtorName}</p>
+                    <p><b>Geburtsdatum:</b> {debtorDob}</p>
+                    <p className="col-span-2"><b>Anschrift:</b> {debtorAddress}</p>
+                  </div>
+                </div>
+
+                {/* Section 3: Erfolgloser Einigungsversuch */}
+                <div className="space-y-2 font-sans border-t border-slate-200 pt-3">
+                  <h3 className="font-bold text-xs uppercase text-slate-900">3. Feststellung des Scheiterns</h3>
+                  <p className="text-xs leading-relaxed">
+                    Es wird hiermit amtlich bescheinigt, dass ein auf der Grundlage persönlicher Beratung und eingehender Prüfung der Vermögensverhältnisse des Schuldners durchgeführter außergerichtlicher Einigungsversuch zur Bereinigung der Schulden auf Basis eines Schuldenbereinigungsplans (Paragraph 305 Absatz 1 Nummer 1 InsO) erfolglos geblieben ist.
+                  </p>
+                  <p className="text-xs"><b>Datum des Scheiterns:</b> {new Date(failureDate).toLocaleDateString("de-DE")}</p>
+                  <div className="p-3 bg-slate-50 border border-slate-300 rounded text-xs space-y-1">
+                    <p className="font-bold">Grund des Scheiterns:</p>
+                    <p className="italic">{failureReason}</p>
+                  </div>
+                </div>
+
+                {/* Section 4: Parteien */}
+                <div className="space-y-1 font-sans border-t border-slate-200 pt-3">
+                  <h3 className="font-bold text-xs uppercase text-slate-900">4. Einbezogene Gläubiger</h3>
+                  <p className="text-xs">Insgesamt wurden <b>{debts.length} Gläubiger</b> mit einer Gesamtforderungssumme von <b>EUR {totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}</b> in den Prozess einbezogen. Gescheiterte Dokumentationen: <b>{failedCount} Gläubigerpositionen</b>.</p>
+                </div>
+
+                {/* Signatures */}
+                <div className="pt-12 border-t border-slate-300 font-sans">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-xs font-bold">Berlin, den {new Date().toLocaleDateString("de-DE")}</p>
+                      <div className="border-b border-slate-900 w-52 h-6"></div>
+                      <p className="text-[10px] text-slate-500 pt-1">Ort, Datum der Kanzleiausstellung</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold">Gesetzeslotse BERLIN e.V.</p>
+                      <div className="border-b border-slate-900 w-52 h-6"></div>
+                      <p className="text-[10px] text-slate-500 pt-1">Unterschrift & Siegel der anerkannten Stelle</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

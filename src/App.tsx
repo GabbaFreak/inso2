@@ -11,6 +11,9 @@ import VollmachtGenerator from "./components/VollmachtGenerator";
 import Schuldenbereinigungsplan from "./components/Schuldenbereinigungsplan";
 import MandantenProfil from "./components/MandantenProfil";
 import { ActivityLog } from "./lib/history";
+import { exportElementToPdf } from "./lib/pdfExport";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { jsPDF } from "jspdf";
 import { 
   Building, 
   CheckCircle, 
@@ -26,7 +29,11 @@ import {
   Building2,
   FileText,
   ClipboardList,
-  User
+  User,
+  Download,
+  Eye,
+  Printer,
+  X
 } from "lucide-react";
 
 type ActiveTab = "pkonto" | "fristen" | "briefe" | "schulden" | "vergleich" | "rechnung" | "scheitern" | "vollmacht" | "bereinigung" | "profil";
@@ -36,6 +43,8 @@ export default function App() {
   const [hasImminentDeadline, setHasImminentDeadline] = useState<boolean>(false);
   const [imminentCount, setImminentCount] = useState<number>(0);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
+  const [mandantenakteFormat, setMandantenakteFormat] = useState<"pdf" | "docx">("pdf");
+  const [showPrintPreviewMandantenakte, setShowPrintPreviewMandantenakte] = useState<boolean>(false);
 
   // Determine active phase based on current tab automatically, but allow mechanical overrides
   const getPhaseForTab = (tab: ActiveTab): 1 | 2 | 3 => {
@@ -115,6 +124,391 @@ export default function App() {
     };
   }, []);
 
+  const handleExportMandantenakte = async () => {
+    try {
+      const profileId = localStorage.getItem("gesetzeslotse_active_profile") || "schmidt";
+      const profileName = localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt";
+      const profileDob = localStorage.getItem("gesetzeslotse_active_debtor_dob") || "";
+      const profileAddress = localStorage.getItem("gesetzeslotse_active_debtor_address") || "";
+      const profileCourt = localStorage.getItem("gesetzeslotse_active_debtor_court") || "";
+      const profileEmployer = localStorage.getItem("gesetzeslotse_active_debtor_employer") || "";
+      const profileIsEmployed = localStorage.getItem("gesetzeslotse_active_debtor_is_employed") === "true";
+      const profileNetIncome = parseFloat(localStorage.getItem("gesetzeslotse_active_debtor_net_income") || "0");
+
+      // Load Debts
+      const storedDebts = localStorage.getItem(`gesetzeslotse_debts_portfolio_${profileId}`);
+      let debtsList: any[] = [];
+      if (storedDebts) {
+        try { debtsList = JSON.parse(storedDebts); } catch (e) { console.error(e); }
+      }
+      const totalDebtsAmount = debtsList.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+      // Load Deadlines
+      const storedDeadlines = localStorage.getItem("gesetzeslotse_recorded_deadlines");
+      let deadlinesList: any[] = [];
+      if (storedDeadlines) {
+        try { deadlinesList = JSON.parse(storedDeadlines); } catch (e) { console.error(e); }
+      }
+      
+      const activeDeadlines = deadlinesList;
+
+      const docChildren = [
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "GESETZESLOTSE BERLIN",
+              bold: true,
+              size: 32,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Kanzlei-Mandantenakte & Verfahrensdokumentation (§ 305 InsO)",
+              bold: true,
+              size: 20,
+              color: "475569"
+            })
+          ],
+          spacing: { after: 360 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Generiert am: ${new Date().toLocaleString("de-DE")}`,
+              size: 18,
+              italics: true,
+              color: "64748b"
+            })
+          ],
+          spacing: { after: 360 }
+        }),
+        
+        // Section 1: Profil
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "1. Mandanten-Profil & Personenstandsdaten",
+              bold: true,
+              size: 24,
+              color: "0f172a"
+            })
+          ],
+          spacing: { before: 240, after: 180 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Name des Mandanten: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: profileName, size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Geburtsdatum: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: profileDob || "Unbekannt", size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Anschrift: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: profileAddress || "Nicht angegeben", size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Zuständiges Gericht: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: profileCourt || "Amtsgericht", size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Erwerbstätigkeit: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: profileIsEmployed ? `Ja (Arbeitgeber: ${profileEmployer || "k.A."})` : "Nein (erwerbslos / Arbeitssuchend)", size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Mtl. Nettoeinkommen: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: `EUR ${profileNetIncome.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Grundfreibetrag P-Konto: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: "EUR 1.500,00 (gesetzlicher Basisschutz 2026/2027)", size: 20 })
+          ],
+          spacing: { after: 240 }
+        }),
+
+        // Section 2: Gläubigerverzeichnis
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "2. Gläubigerverzeichnis & Forderungsaufstellung",
+              bold: true,
+              size: 24,
+              color: "0f172a"
+            })
+          ],
+          spacing: { before: 240, after: 180 }
+        })
+      ];
+
+      if (debtsList.length === 0) {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: "Bisher wurden keine Gläubiger oder Forderungen in dieser Akte erfasst.",
+                size: 20,
+                italics: true,
+                color: "64748b"
+              })
+            ],
+            spacing: { after: 240 }
+          })
+        );
+      } else {
+        debtsList.forEach((d, idx) => {
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `${idx + 1}. ${d.creditorName || "Unbekannter Gläubiger"}`,
+                  bold: true,
+                  size: 20,
+                  color: "1e293b"
+                }),
+                new DocxTextRun({
+                  text: ` (Ref: ${d.fileReference || "GLB-305"}) • Status: ${d.status || "offen"} • Betrag: EUR ${(d.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+                  size: 20
+                })
+              ],
+              spacing: { after: 120 }
+            })
+          );
+        });
+
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: `GESAMTE FORDERUNGSSUMME: EUR ${totalDebtsAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+                bold: true,
+                size: 22,
+                color: "1e293b"
+              })
+            ],
+            spacing: { before: 180, after: 240 }
+          })
+        );
+      }
+
+      // Section 3: Deadlines
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "3. Insolvenzrechtliche & gerichtliche Fristen",
+              bold: true,
+              size: 24,
+              color: "0f172a"
+            })
+          ],
+          spacing: { before: 240, after: 180 }
+        })
+      );
+
+      if (activeDeadlines.length === 0) {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: "Zurzeit sind keine aktiven gerichtlichen Fristen im Kanzlei-Cockpit verzeichnet.",
+                size: 20,
+                italics: true,
+                color: "64748b"
+              })
+            ],
+            spacing: { after: 240 }
+          })
+        );
+      } else {
+        activeDeadlines.forEach((item, idx) => {
+          const rDate = new Date(item.receivedDate);
+          const daysToAdd = item.docType === "mahnbescheid" || item.docType === "vollstreckungsbescheid" ? 14 : item.docType === "gerichtsvollzieher" ? 7 : 10;
+          rDate.setDate(rDate.getDate() + daysToAdd);
+          const deadlineStr = rDate.toLocaleDateString("de-DE");
+
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: `${idx + 1}. Frist für: ${item.docType === "mahnbescheid" ? "Mahnbescheid (14 Tage)" : item.docType === "vollstreckungsbescheid" ? "Vollstreckungsbescheid (14 Tage)" : "Gerichtsvollzieher (7 Tage)"}`,
+                  bold: true,
+                  size: 20
+                }),
+                new DocxTextRun({
+                  text: ` • Gläubiger: ${item.creditorName || "Unbekannt"} • Erhalt am: ${new Date(item.receivedDate).toLocaleDateString("de-DE")} • Ablaufdatum: ${deadlineStr} • Status: ${item.isDone ? "Erledigt" : "OFFEN"}`,
+                  size: 20
+                })
+              ],
+              spacing: { after: 120 }
+            })
+          );
+        });
+      }
+
+      // Section 4: Calculations / Summary
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "4. Berechnungen zum außergerichtlichen Vergleich",
+              bold: true,
+              size: 24,
+              color: "0f172a"
+            })
+          ],
+          spacing: { before: 240, after: 180 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Einigungs-Modell: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: "Verbraucherinsolvenz-Vorbereitungsplan (Nullplan oder Ratenvergleich)", size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Forderungsbestand: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: `${debtsList.length} Gläubiger mit einer Gesamtsumme von EUR ${totalDebtsAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, size: 20 })
+          ],
+          spacing: { after: 120 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Kanzlei-Empfehlung: ", bold: true, size: 20 }),
+            new DocxTextRun({ text: "Außergerichtliche Einigung bevorzugt, bei Ablehnung sofortiger Insolvenzantrag (§ 305)", size: 20, color: "10b981" })
+          ],
+          spacing: { after: 240 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "HINWEIS: Diese Akte dient als internes Dokumentationstool zur Vorbereitung des Verfahrens nach § 305 Abs. 1 InsO. Alle Angaben basieren auf den vom Mandanten vorgelegten Urkunden und Aktenordnern. Eine rechtliche Prüfung im Einzelfall wurde sachgemäß vorgenommen.",
+              size: 16,
+              italics: true,
+              color: "64748b"
+            })
+          ],
+          spacing: { after: 240 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "___________________________             ___________________________", size: 20 })
+          ],
+          spacing: { before: 240, after: 60 }
+        }),
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({ text: "Unterschrift Sachbearbeiter (Stelle)     Handzeichen Mandant / Schuldner", size: 18, color: "64748b" })
+          ]
+        })
+      );
+
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Kanzlei_Mandantenakte_305_${profileName.replace(/\s+/g, "_")}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      // Log event
+      try {
+        const historyKey = "gesetzeslotse_activity_history";
+        const storedHistory = localStorage.getItem(historyKey) || "[]";
+        const historyList = JSON.parse(storedHistory);
+        const newLog = {
+          id: `log-${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+          category: "DOCX-Export",
+          message: `Mandantenakte für ${profileName} als Word-Dokument exportiert.`
+        };
+        localStorage.setItem(historyKey, JSON.stringify([newLog, ...historyList]));
+        window.dispatchEvent(new CustomEvent("gesetzeslotse_activity_logged"));
+      } catch (err) {
+        console.error(err);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Fehler beim Exportieren der Mandantenakte als DOCX.");
+    }
+  };
+
+  const handleExportMandantenaktePdf = async () => {
+    try {
+      if (!showPrintPreviewMandantenakte) {
+        setShowPrintPreviewMandantenakte(true);
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      const profileName = localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt";
+      const fileName = `Kanzlei_Mandantenakte_305_${profileName.replace(/\s+/g, "_")}.pdf`;
+
+      await exportElementToPdf("printable-mandantenakte-container", fileName);
+
+      // Log event
+      try {
+        const historyKey = "gesetzeslotse_activity_history";
+        const storedHistory = localStorage.getItem(historyKey) || "[]";
+        const historyList = JSON.parse(storedHistory);
+        const newLog = {
+          id: `log-${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+          category: "PDF-Export",
+          message: `Mandantenakte für ${profileName} als PDF-Dokument exportiert.`
+        };
+        localStorage.setItem(historyKey, JSON.stringify([newLog, ...historyList]));
+        window.dispatchEvent(new CustomEvent("gesetzeslotse_activity_logged"));
+      } catch (err) {
+        console.error(err);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Fehler beim Erstellen der PDF-Mandantenakte.");
+    }
+  };
+
+  const handleMainMandantenakteExport = () => {
+    if (mandantenakteFormat === "pdf") {
+      handleExportMandantenaktePdf();
+    } else {
+      handleExportMandantenakte();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-850 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans selection:bg-slate-800 selection:text-white" id="applet-viewport">
       {/* Visual Identity Header */}
@@ -184,9 +578,59 @@ export default function App() {
                 Strukturierte Visualisierung des Fortschritts im gesetzlichen Verbraucherinsolvenzverfahren
               </p>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-bold">Status d. Einigungsversuchs:</span>
-              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Außergerichtliche Regulierung läuft</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-right">
+              <div className="text-left sm:text-right hidden md:block">
+                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-bold">Status d. Einigungsversuchs:</span>
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Außergerichtliche Regulierung läuft</span>
+              </div>
+
+              {/* Format Switcher */}
+              <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setMandantenakteFormat("pdf")}
+                  className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                    mandantenakteFormat === "pdf"
+                      ? "bg-rose-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMandantenakteFormat("docx")}
+                  className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                    mandantenakteFormat === "docx"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  DOCX
+                </button>
+              </div>
+
+              {/* Preview & Print Button */}
+              <button
+                type="button"
+                onClick={() => setShowPrintPreviewMandantenakte(true)}
+                className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 px-3 py-2 rounded-xl text-[10px] font-bold cursor-pointer transition-all border border-slate-700"
+                title="Druckansicht öffnen"
+              >
+                <Eye className="h-3.5 w-3.5 text-slate-300" />
+                <span>Vorschau & Drucken</span>
+              </button>
+
+              {/* Export Button */}
+              <button
+                type="button"
+                onClick={handleMainMandantenakteExport}
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-[10px] font-black cursor-pointer shadow-sm transition-all uppercase tracking-wider border border-indigo-700"
+                id="export-mandantenakte-btn"
+              >
+                <Download className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+                <span>Mandantenakte ({mandantenakteFormat.toUpperCase()})</span>
+              </button>
             </div>
           </div>
 
@@ -855,6 +1299,199 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Print Preview Modal for Mandantenakte */}
+      {showPrintPreviewMandantenakte && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-amber-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">
+                  Druckansicht & Vorschau — Mandantenakte
+                </h3>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Format selection */}
+                <div className="inline-flex p-1 bg-slate-800 rounded-lg border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setMandantenakteFormat("pdf")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      mandantenakteFormat === "pdf" ? "bg-rose-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMandantenakteFormat("docx")}
+                    className={`px-2.5 py-0.5 text-[10px] font-bold rounded ${
+                      mandantenakteFormat === "docx" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    DOCX
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleMainMandantenakteExport}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Speichern ({mandantenakteFormat.toUpperCase()})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintPreviewMandantenakte(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Document Container */}
+            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
+              <div id="printable-mandantenakte-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+                
+                {/* Print Running Header (Visible on every page when printed) */}
+                <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-6 w-auto object-contain shrink-0" />
+                    <span className="font-bold text-slate-900 uppercase">Verfahrensakte § 305 InsO</span>
+                  </div>
+                  <div className="font-mono text-slate-500">
+                    Akte: GL-305-{localStorage.getItem("gesetzeslotse_active_profile") || "SCHMIDT"}
+                  </div>
+                </div>
+
+                {/* Print Running Footer (Visible on every page when printed) */}
+                <div className="hidden print-page-footer text-[9px] font-sans text-slate-500">
+                  <span>GESETZESLOTSE BERLIN e.V. • Vertrauliche Mandantenunterlage</span>
+                  <span className="print-page-number"></span>
+                </div>
+
+                {/* Letterhead Header */}
+                <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-11 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                    <div className="hidden sm:block border-l border-slate-300 pl-3">
+                      <p className="text-[10px] font-sans text-slate-600 leading-tight">
+                        Anerkannte Beratungsstelle gemäß § 305 InsO<br />
+                        Alt-Moabit 90 D • 10559 Berlin
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-[10px] font-mono text-slate-500 font-sans">
+                    <p>Datum: {new Date().toLocaleDateString("de-DE")}</p>
+                    <p>Akte-Ref: GL-305-{localStorage.getItem("gesetzeslotse_active_profile") || "SCHMIDT"}</p>
+                  </div>
+                </div>
+
+                <div className="text-center py-2 font-sans">
+                  <h1 className="text-lg font-black uppercase tracking-tight text-slate-900">
+                    VERFAHRENSAKTE & MANDANTENSTAMMDATEN
+                  </h1>
+                  <p className="text-xs text-slate-600">Außergerichtliches Schuldenbereinigungsverfahren (§ 305 Abs. 1 Nr. 1 InsO)</p>
+                </div>
+
+                {/* Section 1: Stammdaten */}
+                <div className="space-y-2 font-sans border-t border-b border-slate-200 py-3">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                    1. Stammdaten des Schuldners
+                  </h3>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                    <div><b>Name, Vorname:</b> {localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt"}</div>
+                    <div><b>Geburtsdatum:</b> {localStorage.getItem("gesetzeslotse_active_debtor_dob") || "14.05.1984"}</div>
+                    <div><b>Wohnanschrift:</b> {localStorage.getItem("gesetzeslotse_active_debtor_address") || "Hauptstraße 42, 10115 Berlin"}</div>
+                    <div><b>Zuständiges Gericht:</b> {localStorage.getItem("gesetzeslotse_active_debtor_court") || "Amtsgericht Wedding"}</div>
+                    <div><b>Arbeitgeber:</b> {localStorage.getItem("gesetzeslotse_active_debtor_employer") || "Keine Angabe"}</div>
+                    <div><b>Monatliches Nettoeinkommen:</b> EUR {parseFloat(localStorage.getItem("gesetzeslotse_active_debtor_net_income") || "0").toFixed(2)}</div>
+                  </div>
+                </div>
+
+                {/* Section 2: Forderungsverzeichnis */}
+                <div className="space-y-3 font-sans">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
+                    2. Gläubigerverzeichnis & Forderungen (§ 305 Abs. 1 Nr. 3 InsO)
+                  </h3>
+                  <table className="w-full text-[10px] text-left border-collapse border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-100 font-bold border-b border-slate-300">
+                        <th className="p-2 border-r border-slate-300">#</th>
+                        <th className="p-2 border-r border-slate-300">Gläubiger / Vertretung</th>
+                        <th className="p-2 border-r border-slate-300">Referenz / Aktenzeichen</th>
+                        <th className="p-2 text-right">Forderung (EUR)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const profileId = localStorage.getItem("gesetzeslotse_active_profile") || "schmidt";
+                        const storedDebts = localStorage.getItem(`gesetzeslotse_debts_portfolio_${profileId}`);
+                        let debtsList: any[] = [];
+                        if (storedDebts) {
+                          try { debtsList = JSON.parse(storedDebts); } catch (e) {}
+                        }
+                        const totalSum = debtsList.reduce((s, item) => s + (item.amount || 0), 0);
+
+                        return (
+                          <>
+                            {debtsList.map((d, i) => (
+                              <tr key={i} className="border-b border-slate-200">
+                                <td className="p-2 border-r border-slate-200 font-mono text-slate-500">{i + 1}</td>
+                                <td className="p-2 border-r border-slate-200 font-bold">{d.name || d.creditor}</td>
+                                <td className="p-2 border-r border-slate-200 font-mono text-slate-600">{d.reference || d.fileRef || "-"}</td>
+                                <td className="p-2 text-right font-mono font-bold">€ {(d.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-slate-100 font-bold border-t-2 border-slate-900">
+                              <td colSpan={3} className="p-2 text-right uppercase tracking-wider">Gesamtforderungssumme:</td>
+                              <td className="p-2 text-right font-mono text-xs text-rose-700">€ {totalSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          </>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Section 3: Legal Stamp & Signature */}
+                <div className="pt-12 border-t border-slate-200 font-sans space-y-4">
+                  <div className="flex justify-between items-end pt-8">
+                    <div>
+                      <p className="border-t border-slate-400 pt-1 text-[10px] text-slate-600 font-bold uppercase w-60">
+                        Unterschrift Sachbearbeiter / Berater
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="border-t border-slate-400 pt-1 text-[10px] text-slate-600 font-bold uppercase w-60">
+                        Handzeichen Mandant / Schuldner
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 text-center pt-4">
+                    Akte erstellt über das Berater-Cockpit Gesetzeslotse BERLIN e.V. — Rechtskräftiges Vordokument für den Eröffnungsantrag beim Amtsgericht.
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

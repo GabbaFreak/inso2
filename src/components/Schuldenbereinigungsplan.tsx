@@ -21,7 +21,7 @@ import {
   Layers
 } from "lucide-react";
 import { DebtItem } from "../types";
-import { jsPDF } from "jspdf";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 
 export default function Schuldenbereinigungsplan() {
   const [activeProfile, setActiveProfile] = useState<string>(() => {
@@ -231,6 +231,22 @@ export default function Schuldenbereinigungsplan() {
   const activeDebtsCount = debts.length;
   const totalDebtSum = debts.reduce((sum, item) => sum + item.amount, 0);
 
+  // Group debts by unique creditor name for distribution analysis
+  const creditorGroups = debts.reduce((acc, debt) => {
+    const name = debt.creditorName ? debt.creditorName.trim() : "Unbekannter Gläubiger";
+    if (!acc[name]) {
+      acc[name] = { name, total: 0, itemsCount: 0 };
+    }
+    acc[name].total += debt.amount;
+    acc[name].itemsCount += 1;
+    return acc;
+  }, {} as Record<string, { name: string; total: number; itemsCount: number }>);
+
+  const creditorDistribution = (Object.values(creditorGroups) as Array<{ name: string; total: number; itemsCount: number }>)
+    .sort((a, b) => b.total - a.total);
+
+  const largestCreditor = creditorDistribution[0] || null;
+
   // Total funds to distribute
   const planTotalProposedBudget = planType === "nullplan" 
     ? 0 
@@ -254,195 +270,343 @@ export default function Schuldenbereinigungsplan() {
     overallPlanState = "success";
   }
 
-  // Generate clean PDF Schuldenbereinigungsplan
-  const handleGeneratePdfReport = () => {
+  // Generate clean DOCX Schuldenbereinigungsplan
+  const handleGenerateDocxReport = async () => {
     try {
       if (debts.length === 0) {
         alert("Fügen Sie zuerst Gläubiger hinzu, um einen Bereinigungsplan zu entwerfen.");
         return;
       }
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
+      const docChildren: any[] = [];
+
+      // Header Title
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "ENTWURF & RECHTLICHER VORSCHLAG",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "SCHULDENBEREINIGUNGSPLAN",
+              bold: true,
+              size: 36,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 100 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "gemäß § 305 Abs. 1 Nr. 1 d. Insolvenzordnung (InsO)",
+              italics: true,
+              size: 20,
+              color: "475569",
+            })
+          ],
+          spacing: { after: 300 }
+        })
+      );
+
+      // 1. Schuldner
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "1. Angaben zum Schuldner (Mandant):",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
+
+      const debtorDetails = [
+        `Vollständiger Name:  ${debtorName}`,
+        `Geburtsdatum:        ${debtorDob || "Unbekannt"}`,
+        `Gemeldete Anschrift:  ${debtorAddress || "Heidestraße, Berlin"}`,
+        `Zuständiges Gericht:  ${competentCourt || "Amtsgericht (Insolvenzgericht)"}`,
+        `Aktenzeichen d. St.:   GL-PLAN-${activeProfile.toUpperCase()}`,
+      ];
+
+      debtorDetails.forEach(detail => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: detail,
+                size: 22,
+                color: "334155",
+              })
+            ],
+            spacing: { after: 60 }
+          })
+        );
       });
 
-      // Cover / Page 1
-      doc.setFont("helvetica", "normal");
-      doc.setFillColor(245, 247, 250);
-      doc.rect(12, 12, 186, 273, "F");
+      // 2. Beratungsstelle
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "2. Zertifizierte Beratungsstelle / Aussteller:",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
 
-      // Outer golden/slate border
-      doc.setDrawColor(33, 41, 54);
-      doc.setLineWidth(0.5);
-      doc.rect(14, 14, 182, 269);
+      const agencyDetails = [
+        "Name der Stelle:      Gesetzeslotse BERLIN Kanzlei-Gemeinschaft",
+        "Akkreditierung:       Staatlich anerkannt nach § 305 Abs. 1 Nr. 1 InsO",
+        "Anregender Beirat:    Senatsverwaltung für Justiz und Verbraucherschutz",
+        "Anschrift d. Kanzlei:  Alt-Moabit 90 D, 10559 Berlin",
+      ];
 
-      // Title Block
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.setTextColor(15, 23, 42); // slate 900
-      doc.text("ENTWURF & RECHTLICHER VORSCHLAG", 105, 45, { align: "center" });
-      doc.setFontSize(22);
-      doc.text("SCHULDENBEREINIGUNGSPLAN", 105, 55, { align: "center" });
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text("gemäß § 305 Abs. 1 Nr. 1 d. Insolvenzordnung (InsO)", 105, 62, { align: "center" });
+      agencyDetails.forEach(detail => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: detail,
+                size: 22,
+                color: "334155",
+              })
+            ],
+            spacing: { after: 60 }
+          })
+        );
+      });
 
-      doc.setLineWidth(0.3);
-      doc.line(30, 68, 180, 68);
+      // 3. Zusammenfassung
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "3. Allgemeine Zusammenfassung des Bereinigungsverfahrens:",
+              bold: true,
+              size: 24,
+              color: "1e293b",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
 
-      // Debtor Metadata Box
-      doc.setFillColor(255, 255, 255);
-      doc.rect(20, 78, 170, 48, "F");
-      doc.rect(20, 78, 170, 48);
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text("1. Angaben zum Schuldner (Mandant):", 25, 84);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Vollständiger Name:  ${debtorName}`, 25, 91);
-      doc.text(`Geburtsdatum:        ${debtorDob || "Unbekannt"}`, 25, 97);
-      doc.text(`Gemeldete Anschrift:  ${debtorAddress || "Heidestraße, Berlin"}`, 25, 103);
-      doc.text(`Zuständiges Gericht:  ${competentCourt || "Amtsgericht (Insolvenzgericht)"}`, 25, 109);
-      doc.text(`Aktenzeichen d. St.:   GL-PLAN-${activeProfile.toUpperCase()}`, 25, 115);
-
-      // Advisory Center Metadata Box
-      doc.setFillColor(255, 255, 255);
-      doc.rect(20, 134, 170, 42, "F");
-      doc.rect(20, 134, 170, 42);
-
-      doc.setFont("helvetica", "bold");
-      doc.text("2. Zertifizierte Beratungsstelle / Aussteller:", 25, 140);
-      doc.setFont("helvetica", "normal");
-      doc.text("Name der Stelle:      Gesetzeslotse BERLIN Kanzlei-Gemeinschaft", 25, 147);
-      doc.text("Akkreditierung:       Staatlich anerkannt nach § 305 Abs. 1 Nr. 1 InsO", 25, 153);
-      doc.text("Anregender Beirat:    Senatsverwaltung für Justiz und Verbraucherschutz", 25, 159);
-      doc.text("Anschrift d. Kanzlei:  Alt-Moabit 90 D, 10559 Berlin", 25, 165);
-
-      // Plan Details Box
-      doc.setFillColor(255, 255, 255);
-      doc.rect(20, 184, 170, 44, "F");
-      doc.rect(20, 184, 170, 44);
-
-      doc.setFont("helvetica", "bold");
-      doc.text("3. Allgemeine Zusammenfassung des Bereinigungsverfahrens:", 25, 190);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Forderungs-Gesamthöhe: EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, 25, 197);
-      doc.text(`Anzahl erfasster Gläubiger: ${activeDebtsCount} Gläubiger-Positionen`, 25, 203);
-      
       let modeText = "Einmalzahlungsvergleich (feste Summe außerger.)";
       if (planType === "nullplan") modeText = "Nullplan (keine Zahlungen mangels pfändbarem Vermögen)";
       else if (planType === "rate") modeText = `Ratenplan über ${planDurationMonths} Monate mit mtl. EUR ${monthlyInstallment}`;
-      
-      doc.text(`Gewählter Einigungsmodus:  ${modeText}`, 25, 209);
-      doc.text(`Gesamter Tilgungsbetrag:   EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, 25, 215);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(220, 38, 38);
-      doc.text(`Gesamte Erlassquote:      ${averageReductionPercentage.toFixed(1)}% Rabatt auf das Gesamtportfolio`, 25, 221);
-      doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "normal");
 
-      // Bottom statement
-      doc.setFontSize(8.5);
-      doc.setTextColor(100, 110, 120);
-      const notice = "WICHTIGER HINWEIS: Dieser Entwurf dient als Schuldenbereinigungsplan für den außergerichtlichen beizulegenden Einigungsversuch gemäß § 305 Abs. 1 Nr. 1 InsO. Stimmen nicht alle Gläubiger zu, gilt der Plan rechtlich als gescheitert. Der Berater stellt im Anschluss die gerichtliche Scheiternsbescheinigung aus.";
-      doc.text(doc.splitTextToSize(notice, 162), 24, 240);
+      const summaryDetails = [
+        `Forderungs-Gesamthöhe: EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+        `Anzahl erfasster Gläubiger: ${activeDebtsCount} Gläubiger-Positionen`,
+        `Gewählter Einigungsmodus:  ${modeText}`,
+        `Gesamter Tilgungsbetrag:   EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
+        `Gesamte Erlassquote:      ${averageReductionPercentage.toFixed(1)}% Rabatt auf das Gesamtportfolio`,
+      ];
 
-      // Footer Cover
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(15, 23, 42);
-      doc.text(`Berlin Ost-West Kanzleiverfahren • Datum d. Erstellung: ${new Date().toLocaleDateString("de-DE")}`, 105, 272, { align: "center" });
+      summaryDetails.forEach(detail => {
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: detail,
+                size: 22,
+                bold: detail.includes("Erlassquote"),
+                color: detail.includes("Erlassquote") ? "b91c1c" : "334155",
+              })
+            ],
+            spacing: { after: 60 }
+          })
+        );
+      });
 
-      // PAGE 2: TABLE
-      doc.addPage();
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("A n l a g e  A: Detaillierter Tilgungs- und Quotenverteilungsplan", 15, 16);
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Einigungsverfahren Schuldner: ${debtorName} • Stand d. Forderungen: ${new Date(planSentDate).toLocaleDateString("de-DE")}`, 15, 22);
+      // Break/Spacing
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      doc.setLineWidth(0.4);
-      doc.line(15, 25, 195, 25);
+      // Table Appendix
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Anlage A: Detaillierter Tilgungs- und Quotenverteilungsplan",
+              bold: true,
+              size: 24,
+              color: "0f172a",
+            })
+          ],
+          spacing: { before: 200, after: 100 }
+        })
+      );
 
-      // Table Headers
-      let tableY = 30;
-      doc.setFillColor(240, 243, 246);
-      doc.rect(15, tableY, 180, 8, "F");
-      doc.rect(15, tableY, 180, 8);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Einigungsverfahren Schuldner: ${debtorName} • Stand d. Forderungen: ${new Date(planSentDate).toLocaleDateString("de-DE")}`,
+              italics: true,
+              size: 18,
+              color: "475569",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.text("Nr.", 17, tableY + 5.5);
-      doc.text("Gläubiger / Vertreter (AZ)", 24, tableY + 5.5);
-      doc.text("Forderung (EUR)", 92, tableY + 5.5);
-      doc.text("Quote (%)", 120, tableY + 5.5);
-      doc.text("Angebot Summe (EUR)", 140, tableY + 5.5);
-      doc.text("Mtl. Rate (EUR)", 173, tableY + 5.5);
-
-      doc.setFont("helvetica", "normal");
-      tableY += 8;
-
+      // Add each debt as a clean structured list item
       debts.forEach((d, idx) => {
-        // Safe math quotient
         const quote = totalDebtSum > 0 ? (d.amount / totalDebtSum) * 100 : 0;
         const proposedTotal = d.amount * (1 - averageReductionPercentage / 100);
         const proposedRate = planType === "rate" ? (proposedTotal / planDurationMonths) : 0;
 
-        doc.rect(15, tableY, 180, 10);
-        doc.text((idx + 1).toString(), 17, tableY + 6.5);
-        
-        const namePart = `${d.creditorName} ${d.fileReference ? `(${d.fileReference})` : ""}`;
-        doc.text(namePart.substring(0, 42), 24, tableY + 6.5);
+        docChildren.push(
+          new DocxParagraph({
+            children: [
+              new DocxTextRun({
+                text: `Position ${idx + 1}: ${d.creditorName} ${d.fileReference ? `(AZ: ${d.fileReference})` : ""}`,
+                bold: true,
+                size: 20,
+              })
+            ],
+            spacing: { before: 100, after: 40 }
+          })
+        );
 
-        // Bold figures
-        doc.text(`EUR ${d.amount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 92, tableY + 6.5);
-        doc.text(`${quote.toFixed(2)}%`, 120, tableY + 6.5);
-        
-        doc.setFont("helvetica", "bold");
-        doc.text(`EUR ${proposedTotal.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 140, tableY + 6.5);
-        doc.text(planType === "rate" ? `EUR ${proposedRate.toFixed(2)}` : "-", 173, tableY + 6.5);
-        doc.setFont("helvetica", "normal");
+        const posText = `• Ursprüngliche Forderung: EUR ${d.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} (Quote: ${quote.toFixed(2)}%)\n` +
+          `• Angebotener Vergleichsbetrag: EUR ${proposedTotal.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
+          `• Monatliche Rate: ${planType === "rate" ? `EUR ${proposedRate.toFixed(2)}` : "Keine monatliche Rate (Einmalzahlung)"}`;
 
-        tableY += 10;
+        posText.split("\n").forEach(line => {
+          docChildren.push(
+            new DocxParagraph({
+              children: [
+                new DocxTextRun({
+                  text: line,
+                  size: 20,
+                  color: "475569",
+                })
+              ],
+              spacing: { after: 30 }
+            })
+          );
+        });
       });
 
-      // Bottom Row Total Summary
-      doc.setFillColor(245, 247, 250);
-      doc.rect(15, tableY, 180, 10, "F");
-      doc.rect(15, tableY, 180, 10);
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
-      doc.setFont("helvetica", "bold");
-      doc.text("GESAMTPOSTEN:", 24, tableY + 6.5);
-      doc.text(`EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 92, tableY + 6.5);
-      doc.text("100.00%", 120, tableY + 6.5);
-      doc.text(`EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, 140, tableY + 6.5);
-      doc.text(planType === "rate" ? `EUR ${monthlyInstallment.toFixed(2)}` : "-", 173, tableY + 6.5);
+      // Total row summary
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "ZUSAMMENFASSUNG BEREINIGUNGSBUDGETS:",
+              bold: true,
+              size: 22,
+              color: "0f172a",
+            })
+          ],
+          spacing: { after: 60 }
+        })
+      );
+
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `• Gesamtforderungen: EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
+                `• Gesamtes Tilgungsangebot: EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
+                `• Monatliche Gesamtrate: ${planType === "rate" ? `EUR ${monthlyInstallment.toFixed(2)}` : "-"}`,
+              size: 22,
+              bold: true,
+              color: "1e293b",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
 
       // Signatures
-      let sigY = tableY + 22;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text("ERKLÄRUNG UND ZUSTIMMUNG DER KANZLEI:", 15, sigY);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text("Mit Übersendung dieses außergerichtlichen Schuldenbereinigungsplans bescheinigt die bevollmächtigte Beraterstelle", 15, sigY + 5);
-      doc.text("die Richtigkeit und rechtliche Aufarbeitung der eingetragenen Forderungen anhand des Belegbestands.", 15, sigY + 9);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "ERKLÄRUNG UND ZUSTIMMUNG DER KANZLEI:",
+              bold: true,
+              size: 20,
+              color: "0f172a",
+            })
+          ],
+          spacing: { before: 200, after: 60 }
+        })
+      );
 
-      sigY += 20;
-      doc.line(15, sigY + 12, 85, sigY + 12);
-      doc.line(125, sigY + 12, 195, sigY + 12);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "Mit Übersendung dieses außergerichtlichen Schuldenbereinigungsplans bescheinigt die bevollmächtigte Beraterstelle die Richtigkeit und rechtliche Aufarbeitung der eingetragenen Forderungen anhand des Belegbestands.",
+              size: 18,
+              color: "475569",
+            })
+          ],
+          spacing: { after: 200 }
+        })
+      );
 
-      doc.text(`Berlin, den ${new Date().toLocaleDateString("de-DE")}`, 18, sigY + 9);
-      doc.text("Ort, Datum der Einreichung", 18, sigY + 16);
-      doc.text("Unterschrift und Siegel (Kanzlei Gesetzeslotse)", 125, sigY + 16);
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}       Unterschrift und Siegel (Kanzlei Gesetzeslotse)`,
+              bold: true,
+              size: 20,
+            })
+          ],
+          spacing: { before: 100 }
+        })
+      );
 
-      doc.save(`Paragraph_305_Schuldenbereinigungsplan_${debtorName.replace(/\s+/g, "_")}.pdf`);
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: docChildren,
+          }
+        ]
+      });
+
+      const blob = await DocxPacker.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Paragraph_305_Schuldenbereinigungsplan_${debtorName.replace(/\s+/g, "_")}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error(e);
-      alert("Fehler beim pdf generation.");
+      alert("Fehler beim DOCX-Export des Schuldenbereinigungsplans.");
     }
   };
 
@@ -476,11 +640,11 @@ export default function Schuldenbereinigungsplan() {
           </button>
 
           <button
-            onClick={handleGeneratePdfReport}
+            onClick={handleGenerateDocxReport}
             className="p-2 bg-slate-950 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-950 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
           >
             <Download className="h-4 w-4" />
-            <span>Plan-PDF exportieren</span>
+            <span>Plan-Word (DOCX) exportieren</span>
           </button>
         </div>
       </div>
@@ -668,6 +832,175 @@ export default function Schuldenbereinigungsplan() {
 
         {/* Right Side: Pro-Rata Table */}
         <div className="lg:col-span-8 space-y-4">
+          
+          {/* Visuelle Gläubiger-Verteilung */}
+          {debts.length > 0 && (() => {
+            const approvedDebtSum = debts.filter(d => feedback[d.id] === "zustimmung").reduce((sum, d) => sum + d.amount, 0);
+            const approvedDebtPercentage = totalDebtSum > 0 ? (approvedDebtSum / totalDebtSum) * 100 : 0;
+            const approvedHeadsPercentage = activeDebtsCount > 0 ? (approvedCount / activeDebtsCount) * 100 : 0;
+
+            const hasKopfmehrheit = approvedCount > activeDebtsCount / 2;
+            const hasSummenmehrheit = approvedDebtSum > totalDebtSum / 2;
+
+            // Check if any single rejecting creditor has > 50%
+            const vetoCreditor = creditorDistribution.find(g => {
+              // Find if any debt of this creditor has been rejected and if their total share is > 50%
+              const hasRejections = debts.some(d => d.creditorName === g.name && feedback[d.id] === "ablehnung");
+              return hasRejections && (g.total / totalDebtSum) > 0.5;
+            });
+
+            const canReplaceObjections = hasKopfmehrheit && hasSummenmehrheit && !vetoCreditor;
+
+            return (
+              <div className="p-5 bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-800 rounded-xl space-y-4 shadow-sm animate-fadeIn" id="creditor-distribution-card">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                      <Layers className="h-4 w-4 text-indigo-500" />
+                      Gläubiger-Verteilung & Forderungsanteile
+                    </h3>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Visualisierung der Schuldenverteilung zur Identifikation der Hauptgläubiger (Kopf- und Summenmehrheit)
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 px-2 py-0.5 rounded font-mono">
+                    Gesamt: EUR {totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column: Distribution List */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Einzelanteile pro Gläubiger</span>
+                    <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                      {creditorDistribution.map((group, index) => {
+                        const share = totalDebtSum > 0 ? (group.total / totalDebtSum) * 100 : 0;
+                        const barColors = [
+                          "bg-indigo-600",
+                          "bg-violet-600",
+                          "bg-purple-600",
+                          "bg-pink-600",
+                          "bg-rose-600",
+                          "bg-amber-600",
+                          "bg-slate-600"
+                        ];
+                        const colorClass = barColors[index % barColors.length];
+
+                        return (
+                          <div key={group.name} className="space-y-1" id={`distribution-item-${index}`}>
+                            <div className="flex justify-between items-center text-[11px]">
+                              <span className="font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate max-w-[180px]">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${colorClass}`} />
+                                <span className="truncate" title={group.name}>{group.name}</span>
+                                <span className="text-[9px] text-slate-400 font-normal shrink-0">
+                                  ({group.itemsCount}x)
+                                </span>
+                              </span>
+                              <div className="space-x-2 font-mono shrink-0">
+                                <span className="text-slate-500">EUR {group.total.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <span className="font-black text-slate-900 dark:text-slate-100">{share.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                            <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                                style={{ width: `${share}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Insolvenzrechtlicher Quorum-Check (§ 309 InsO) */}
+                  <div className="bg-slate-50/75 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850 space-y-3 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] font-extrabold text-slate-550 dark:text-slate-350 uppercase tracking-wider flex items-center gap-1">
+                        <span>⚖️</span> Mehrheits- & Quorumsprüfung (§ 309 InsO)
+                      </span>
+                      <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        Simuliert, ob widersprechende Gläubiger im gerichtlichen Verfahren durch das Insolvenzgericht ersetzt werden können (§ 309 InsO).
+                      </p>
+
+                      <div className="space-y-3.5 mt-4">
+                        {/* 1. Kopfmehrheit */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">1. Kopfmehrheit (Mehrheit der Gläubigerköpfe)</span>
+                            <span className={`font-mono font-bold ${hasKopfmehrheit ? "text-emerald-650" : "text-amber-600"}`}>
+                              {approvedCount} von {activeDebtsCount} ({approvedHeadsPercentage.toFixed(0)}%)
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${hasKopfmehrheit ? "bg-emerald-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(approvedHeadsPercentage, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[8.5px] text-slate-450">Erforderlich: &gt; 50% der Köpfe ({Math.ceil((activeDebtsCount + 1) / 2)} Zustimmungen)</p>
+                        </div>
+
+                        {/* 2. Summenmehrheit */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">2. Summenmehrheit (Mehrheit der Forderungssumme)</span>
+                            <span className={`font-mono font-bold ${hasSummenmehrheit ? "text-emerald-650" : "text-amber-600"}`}>
+                              EUR {approvedDebtSum.toLocaleString("de-DE", { maximumFractionDigits: 0 })} ({approvedDebtPercentage.toFixed(0)}%)
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${hasSummenmehrheit ? "bg-emerald-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(approvedDebtPercentage, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[8.5px] text-slate-450">Erforderlich: &gt; 50% des Gesamtbetrags (&gt; EUR {(totalDebtSum / 2).toLocaleString("de-DE", { maximumFractionDigits: 0 })})</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Result Notice */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-200/50 dark:border-slate-800">
+                      {canReplaceObjections ? (
+                        <div className="p-2 bg-emerald-50 dark:bg-emerald-950/25 text-emerald-800 dark:text-emerald-350 border border-emerald-100 dark:border-emerald-900 rounded-lg text-[9px] font-semibold space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span>✅</span>
+                            <span>Zustimmungsersetzung möglich!</span>
+                          </div>
+                          <span className="font-normal text-slate-500 dark:text-slate-400 block leading-tight">Beide Mehrheiten sind gegeben. Das Gericht kann unkooperative Gläubiger überstimmen. Planerfolg ist sehr wahrscheinlich!</span>
+                        </div>
+                      ) : (
+                        <div className="p-2 bg-amber-50 dark:bg-amber-950/25 text-amber-800 dark:text-amber-350 border border-amber-100 dark:border-amber-900 rounded-lg text-[9px] font-semibold space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span>⚠️</span>
+                            <span>Gerichtliche Ersetzung blockiert</span>
+                          </div>
+                          <span className="font-normal text-slate-500 dark:text-slate-400 block leading-tight">
+                            {vetoCreditor 
+                              ? `Veto-Sperre: Gläubiger "${vetoCreditor.name}" hält über 50% der Gesamtsumme (${((vetoCreditor.total / totalDebtSum)*100).toFixed(0)}%) und hat abgelehnt.` 
+                              : "Die gesetzlichen Quoren (Kopf- oder Summenmehrheit) sind noch nicht erreicht. Holen Sie weitere Zustimmungen ein!"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {largestCreditor && (
+                  <div className="p-2.5 bg-indigo-50/50 border border-indigo-100 dark:bg-indigo-950/10 dark:border-indigo-900 text-[10px] text-indigo-800 dark:text-indigo-300 rounded-lg flex items-center justify-between" id="largest-creditor-notice">
+                    <span>
+                      💡 Größter Gläubigeranteil: <b>{largestCreditor.name}</b> mit <b>EUR {largestCreditor.total.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>. Stimmt dieser Gläubiger nicht zu, gilt das außergerichtliche Verfahren als gescheitert.
+                    </span>
+                    <span className="bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-100 font-bold px-2 py-0.5 rounded-md uppercase shrink-0">
+                      {((largestCreditor.total / totalDebtSum) * 100).toFixed(1)}% Anteil
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="p-5 bg-slate-50 border border-slate-205 dark:bg-slate-950/20 dark:border-slate-850 rounded-xl space-y-4">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -766,7 +1099,7 @@ export default function Schuldenbereinigungsplan() {
                                 <button
                                   type="button"
                                   onClick={() => updateFeedback(item.id, "zustimmung")}
-                                  className={`p-1 px-1.5 rounded text-[10px] font-black cursor-pointer过渡 flex items-center gap-0.5 border ${
+                                  className={`p-1 px-1.5 rounded text-[10px] font-black cursor-pointer transition flex items-center gap-0.5 border ${
                                     currentStatus === "zustimmung"
                                       ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-900 dark:text-emerald-300"
                                       : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400"
