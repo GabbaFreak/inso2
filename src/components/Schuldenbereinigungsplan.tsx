@@ -18,11 +18,25 @@ import {
   Building,
   User,
   Activity,
-  Layers
+  Layers,
+  X
 } from "lucide-react";
 import { DebtItem } from "../types";
 import { createDocxLogoHeader } from "../lib/logoData";
-import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { exportElementToPdf } from "../lib/pdfExport";
+import { 
+  Document as DocxDocument, 
+  Packer as DocxPacker, 
+  Paragraph as DocxParagraph, 
+  TextRun as DocxTextRun,
+  Table as DocxTable,
+  TableRow as DocxTableRow,
+  TableCell as DocxTableCell,
+  WidthType as DocxWidthType,
+  BorderStyle as DocxBorderStyle,
+  ShadingType as DocxShadingType,
+  AlignmentType as DocxAlignmentType
+} from "docx";
 
 export default function Schuldenbereinigungsplan() {
   const [activeProfile, setActiveProfile] = useState<string>(() => {
@@ -48,6 +62,11 @@ export default function Schuldenbereinigungsplan() {
   const [feedback, setFeedback] = useState<Record<string, "offen" | "zustimmung" | "ablehnung">>({});
 
   const [notification, setNotification] = useState("");
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+
+  const handleExportPdf = async () => {
+    await exportElementToPdf("printable-schuldenbereinigungsplan-container", `Schuldenbereinigungsplan_305_InsO_${debtorName.replace(/\s+/g, "_")}`);
+  };
 
   const loadProfileAndDebts = () => {
     const profile = localStorage.getItem("gesetzeslotse_active_profile") || "schmidt";
@@ -259,6 +278,24 @@ export default function Schuldenbereinigungsplan() {
     ? 100 - (planTotalProposedBudget / totalDebtSum) * 100 
     : 100;
 
+  const averageQuotaPercent = totalDebtSum > 0 
+    ? (planTotalProposedBudget / totalDebtSum) * 100 
+    : 0;
+
+  const proRataDetails = debts.map(d => {
+    const quota = totalDebtSum > 0 ? (d.amount / totalDebtSum) * 100 : 0;
+    const proposedTotal = (quota / 100) * planTotalProposedBudget;
+    const monthlyRate = planType === "rate" && planDurationMonths > 0 ? proposedTotal / planDurationMonths : 0;
+    return {
+      id: d.id,
+      name: d.creditorName || "Gläubiger",
+      amount: d.amount,
+      quota,
+      proposedTotal,
+      monthlyRate,
+    };
+  });
+
   // Plan overall status
   const rejectedCount = debts.filter(d => feedback[d.id] === "ablehnung").length;
   const approvedCount = debts.filter(d => feedback[d.id] === "zustimmung").length;
@@ -271,7 +308,7 @@ export default function Schuldenbereinigungsplan() {
     overallPlanState = "success";
   }
 
-  // Generate clean DOCX Schuldenbereinigungsplan
+  // Generate clean, highly structured DOCX Schuldenbereinigungsplan
   const handleGenerateDocxReport = async () => {
     try {
       if (debts.length === 0) {
@@ -280,20 +317,54 @@ export default function Schuldenbereinigungsplan() {
       }
 
       const docChildren: any[] = [];
-      docChildren.push(createDocxLogoHeader(220, 44));
 
-      // Header Title
+      // 1. Logo Header
+      docChildren.push(createDocxLogoHeader(220, 48));
+
+      // Letterhead Metadata line
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "ENTWURF & RECHTLICHER VORSCHLAG",
-              bold: true,
-              size: 24,
-              color: "1e293b",
+              text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft • Staatlich anerkannte Stelle nach § 305 Abs. 1 Nr. 1 InsO • Alt-Moabit 90 D, 10559 Berlin",
+              size: 16,
+              color: "64748B",
             })
           ],
-          spacing: { before: 200, after: 100 }
+          alignment: DocxAlignmentType.CENTER,
+          spacing: { after: 200 }
+        })
+      );
+
+      // Kanzleireferenz & Date Header Line
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: `Referenz: GLB-305-${activeProfile.toUpperCase()}   |   Datum: ${new Date(planSentDate).toLocaleDateString("de-DE")}`,
+              bold: true,
+              size: 18,
+              color: "475569",
+            })
+          ],
+          alignment: DocxAlignmentType.RIGHT,
+          spacing: { after: 150 }
+        })
+      );
+
+      // Document Title Header
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "AUßERGERICHTLICHER SCHULDENBEREINIGUNGSPLAN",
+              bold: true,
+              size: 28,
+              color: "0F172A",
+            })
+          ],
+          alignment: DocxAlignmentType.CENTER,
+          spacing: { before: 100, after: 60 }
         })
       );
 
@@ -301,163 +372,324 @@ export default function Schuldenbereinigungsplan() {
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "SCHULDENBEREINIGUNGSPLAN",
-              bold: true,
-              size: 36,
-              color: "0f172a",
-            })
-          ],
-          spacing: { after: 100 }
-        })
-      );
-
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "gemäß § 305 Abs. 1 Nr. 1 d. Insolvenzordnung (InsO)",
+              text: "gemäß § 305 Abs. 1 Nr. 1 Insolvenzordnung (InsO) zur außergerichtlichen gütlichen Schuldenbereinigung",
               italics: true,
               size: 20,
               color: "475569",
             })
           ],
+          alignment: DocxAlignmentType.CENTER,
           spacing: { after: 300 }
         })
       );
 
-      // 1. Schuldner
+      // Table 1: Stammdaten Schuldner & Beratungsstelle
+      const borderThin = { style: DocxBorderStyle.SINGLE, size: 4, color: "CBD5E1" };
+      const tableBordersLight = {
+        top: borderThin,
+        bottom: borderThin,
+        left: borderThin,
+        right: borderThin,
+        insideHorizontal: borderThin,
+        insideVertical: borderThin,
+      };
+
       docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "1. Angaben zum Schuldner (Mandant):",
-              bold: true,
-              size: 24,
-              color: "1e293b",
-            })
-          ],
-          spacing: { before: 200, after: 100 }
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersLight,
+          rows: [
+            // Category Header 1
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "1. ANGABEN ZUM SCHULDNER (MANDANT)",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            // Row 1.1
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Vollständiger Name:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorName, bold: true, size: 18, color: "0F172A" })] })]
+                }),
+              ]
+            }),
+            // Row 1.2
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geburtsdatum:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorDob || "Unbekannt", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            // Row 1.3
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gemeldete Anschrift:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorAddress || "Heidestraße 48, Berlin", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            // Row 1.4
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Zuständiges Gericht:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: competentCourt || "Amtsgericht Wedding (Insolvenzgericht)", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+
+            // Category Header 2
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "2. ZERTIFIZIERTE BERATERSTELLE / AUSSTELLER",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            // Row 2.1
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Name der Stelle:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft", bold: true, size: 18, color: "0F172A" })] })]
+                }),
+              ]
+            }),
+            // Row 2.2
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Akkreditierung:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Staatlich anerkannt nach § 305 Abs. 1 Nr. 1 InsO (Senatsverwaltung Berlin)", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            // Row 2.3
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anschrift d. Kanzlei:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Alt-Moabit 90 D, 10559 Berlin", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+          ]
         })
       );
 
-      const debtorDetails = [
-        `Vollständiger Name:  ${debtorName}`,
-        `Geburtsdatum:        ${debtorDob || "Unbekannt"}`,
-        `Gemeldete Anschrift:  ${debtorAddress || "Heidestraße, Berlin"}`,
-        `Zuständiges Gericht:  ${competentCourt || "Amtsgericht (Insolvenzgericht)"}`,
-        `Aktenzeichen d. St.:   GL-PLAN-${activeProfile.toUpperCase()}`,
-      ];
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 140 } }));
 
-      debtorDetails.forEach(detail => {
-        docChildren.push(
-          new DocxParagraph({
-            children: [
-              new DocxTextRun({
-                text: detail,
-                size: 22,
-                color: "334155",
-              })
-            ],
-            spacing: { after: 60 }
-          })
-        );
-      });
-
-      // 2. Beratungsstelle
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "2. Zertifizierte Beratungsstelle / Aussteller:",
-              bold: true,
-              size: 24,
-              color: "1e293b",
-            })
-          ],
-          spacing: { before: 200, after: 100 }
-        })
-      );
-
-      const agencyDetails = [
-        "Name der Stelle:      Gesetzeslotse BERLIN Kanzlei-Gemeinschaft",
-        "Akkreditierung:       Staatlich anerkannt nach § 305 Abs. 1 Nr. 1 InsO",
-        "Anregender Beirat:    Senatsverwaltung für Justiz und Verbraucherschutz",
-        "Anschrift d. Kanzlei:  Alt-Moabit 90 D, 10559 Berlin",
-      ];
-
-      agencyDetails.forEach(detail => {
-        docChildren.push(
-          new DocxParagraph({
-            children: [
-              new DocxTextRun({
-                text: detail,
-                size: 22,
-                color: "334155",
-              })
-            ],
-            spacing: { after: 60 }
-          })
-        );
-      });
-
-      // 3. Zusammenfassung
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "3. Allgemeine Zusammenfassung des Bereinigungsverfahrens:",
-              bold: true,
-              size: 24,
-              color: "1e293b",
-            })
-          ],
-          spacing: { before: 200, after: 100 }
-        })
-      );
-
+      // Table 2: Financial Summary Card
       let modeText = "Einmalzahlungsvergleich (feste Summe außerger.)";
       if (planType === "nullplan") modeText = "Nullplan (keine Zahlungen mangels pfändbarem Vermögen)";
-      else if (planType === "rate") modeText = `Ratenplan über ${planDurationMonths} Monate mit mtl. EUR ${monthlyInstallment}`;
+      else if (planType === "rate") modeText = `Ratenplan über ${planDurationMonths} Monate mit mtl. EUR ${monthlyInstallment.toFixed(2)}`;
 
-      const summaryDetails = [
-        `Forderungs-Gesamthöhe: EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
-        `Anzahl erfasster Gläubiger: ${activeDebtsCount} Gläubiger-Positionen`,
-        `Gewählter Einigungsmodus:  ${modeText}`,
-        `Gesamter Tilgungsbetrag:   EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
-        `Gesamte Erlassquote:      ${averageReductionPercentage.toFixed(1)}% Rabatt auf das Gesamtportfolio`,
-      ];
+      docChildren.push(
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersLight,
+          rows: [
+            // Header
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "3. ECKDATEN & KENNZAHLEN DES SCHULDENBEREINIGUNGSPLANS",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 45, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Forderungs-Gesamthöhe:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 55, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, bold: true, size: 18, color: "991B1B" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 45, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Erfasste Gläubiger-Positionen:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 55, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `${activeDebtsCount} Gläubiger-Positionen`, size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 45, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gewählter Einigungsmodus:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 55, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: modeText, size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 45, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesamter Tilgungsbetrag:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 55, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, bold: true, size: 18, color: "15803D" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 45, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesamte Erlassquote (Ersparnis):", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 55, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `${averageReductionPercentage.toFixed(1)}% Erlass auf das Gesamtportfolio`, bold: true, size: 18, color: "15803D" })] })]
+                }),
+              ]
+            }),
+          ]
+        })
+      );
 
-      summaryDetails.forEach(detail => {
-        docChildren.push(
-          new DocxParagraph({
-            children: [
-              new DocxTextRun({
-                text: detail,
-                size: 22,
-                bold: detail.includes("Erlassquote"),
-                color: detail.includes("Erlassquote") ? "b91c1c" : "334155",
-              })
-            ],
-            spacing: { after: 60 }
-          })
-        );
-      });
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 180 } }));
 
-      // Break/Spacing
-      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
-
-      // Table Appendix
+      // Section 3: Table Appendix (Anlage A)
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "Anlage A: Detaillierter Tilgungs- und Quotenverteilungsplan",
+              text: "Anlage A: Detaillierter Pro-Rata Quoten- & Tilgungsplan",
               bold: true,
-              size: 24,
-              color: "0f172a",
+              size: 22,
+              color: "0F172A",
             })
           ],
-          spacing: { before: 200, after: 100 }
+          spacing: { before: 60, after: 40 }
         })
       );
 
@@ -465,100 +697,176 @@ export default function Schuldenbereinigungsplan() {
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: `Einigungsverfahren Schuldner: ${debtorName} • Stand d. Forderungen: ${new Date(planSentDate).toLocaleDateString("de-DE")}`,
+              text: `Proportionalitätsberechnung für Schuldner: ${debtorName} • Stand d. Forderungen: ${new Date(planSentDate).toLocaleDateString("de-DE")}`,
               italics: true,
-              size: 18,
+              size: 17,
               color: "475569",
             })
           ],
-          spacing: { after: 200 }
+          spacing: { after: 120 }
         })
       );
 
-      // Add each debt as a clean structured list item
+      // Table Appendix Headers
+      const tableRows: any[] = [];
+      tableRows.push(
+        new DocxTableRow({
+          children: [
+            new DocxTableCell({
+              width: { size: 6, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.CENTER, children: [new DocxTextRun({ text: "Pos.", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 36, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 100, right: 100 },
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gläubiger / Vertreter (AZ)", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 18, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: "Forderung", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 10, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: "Quote", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 16, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: "Gütl. Angebot", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 14, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "0F172A" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: "Mtl. Rate", bold: true, size: 17, color: "FFFFFF" })] })]
+            }),
+          ]
+        })
+      );
+
+      // Data Rows
       debts.forEach((d, idx) => {
         const quote = totalDebtSum > 0 ? (d.amount / totalDebtSum) * 100 : 0;
         const proposedTotal = d.amount * (1 - averageReductionPercentage / 100);
-        const proposedRate = planType === "rate" ? (proposedTotal / planDurationMonths) : 0;
+        const proposedRate = planType === "rate" && planDurationMonths > 0 ? (proposedTotal / planDurationMonths) : 0;
+        const isAltRow = idx % 2 === 1;
 
-        docChildren.push(
-          new DocxParagraph({
+        tableRows.push(
+          new DocxTableRow({
             children: [
-              new DocxTextRun({
-                text: `Position ${idx + 1}: ${d.creditorName} ${d.fileReference ? `(AZ: ${d.fileReference})` : ""}`,
-                bold: true,
-                size: 20,
-              })
-            ],
-            spacing: { before: 100, after: 40 }
+              new DocxTableCell({
+                width: { size: 6, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 60, right: 60 },
+                children: [new DocxParagraph({ alignment: DocxAlignmentType.CENTER, children: [new DocxTextRun({ text: `${idx + 1}`, size: 17, color: "334155" })] })]
+              }),
+              new DocxTableCell({
+                width: { size: 36, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 100, right: 100 },
+                children: [
+                  new DocxParagraph({ children: [new DocxTextRun({ text: d.creditorName, bold: true, size: 17, color: "0F172A" })] }),
+                  d.fileReference ? new DocxParagraph({ children: [new DocxTextRun({ text: `AZ: ${d.fileReference}`, size: 15, color: "64748B" })] }) : new DocxParagraph({ children: [] })
+                ]
+              }),
+              new DocxTableCell({
+                width: { size: 18, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: `EUR ${d.amount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, size: 17, color: "334155" })] })]
+              }),
+              new DocxTableCell({
+                width: { size: 10, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: `${quote.toFixed(2)}%`, size: 17, color: "475569" })] })]
+              }),
+              new DocxTableCell({
+                width: { size: 16, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: `EUR ${proposedTotal.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: true, size: 17, color: "15803D" })] })]
+              }),
+              new DocxTableCell({
+                width: { size: 14, type: DocxWidthType.PERCENTAGE },
+                shading: isAltRow ? { fill: "F1F5F9" } : undefined,
+                margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: planType === "rate" ? `EUR ${proposedRate.toFixed(2)}` : "-", bold: true, size: 17, color: "0F172A" })] })]
+              }),
+            ]
           })
         );
-
-        const posText = `• Ursprüngliche Forderung: EUR ${d.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} (Quote: ${quote.toFixed(2)}%)\n` +
-          `• Angebotener Vergleichsbetrag: EUR ${proposedTotal.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
-          `• Monatliche Rate: ${planType === "rate" ? `EUR ${proposedRate.toFixed(2)}` : "Keine monatliche Rate (Einmalzahlung)"}`;
-
-        posText.split("\n").forEach(line => {
-          docChildren.push(
-            new DocxParagraph({
-              children: [
-                new DocxTextRun({
-                  text: line,
-                  size: 20,
-                  color: "475569",
-                })
-              ],
-              spacing: { after: 30 }
-            })
-          );
-        });
       });
 
-      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
-
-      // Total row summary
-      docChildren.push(
-        new DocxParagraph({
+      // Total Row
+      tableRows.push(
+        new DocxTableRow({
           children: [
-            new DocxTextRun({
-              text: "ZUSAMMENFASSUNG BEREINIGUNGSBUDGETS:",
-              bold: true,
-              size: 22,
-              color: "0f172a",
-            })
-          ],
-          spacing: { after: 60 }
+            new DocxTableCell({
+              width: { size: 42, type: DocxWidthType.PERCENTAGE },
+              columnSpan: 2,
+              shading: { fill: "E2E8F0" },
+              margins: { top: 100, bottom: 100, left: 100, right: 100 },
+              children: [new DocxParagraph({ children: [new DocxTextRun({ text: "GESAMTSUMME / PRO-RATA BILANZ", bold: true, size: 18, color: "0F172A" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 18, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "E2E8F0" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: `EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: true, size: 18, color: "991B1B" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 10, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "E2E8F0" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: "100.00%", bold: true, size: 18, color: "0F172A" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 16, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "E2E8F0" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: `EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: true, size: 18, color: "15803D" })] })]
+            }),
+            new DocxTableCell({
+              width: { size: 14, type: DocxWidthType.PERCENTAGE },
+              shading: { fill: "E2E8F0" },
+              margins: { top: 100, bottom: 100, left: 80, right: 80 },
+              children: [new DocxParagraph({ alignment: DocxAlignmentType.RIGHT, children: [new DocxTextRun({ text: planType === "rate" ? `EUR ${monthlyInstallment.toFixed(2)}` : "-", bold: true, size: 18, color: "0F172A" })] })]
+            }),
+          ]
         })
       );
 
       docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: `• Gesamtforderungen: EUR ${totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
-                `• Gesamtes Tilgungsangebot: EUR ${planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}\n` +
-                `• Monatliche Gesamtrate: ${planType === "rate" ? `EUR ${monthlyInstallment.toFixed(2)}` : "-"}`,
-              size: 22,
-              bold: true,
-              color: "1e293b",
-            })
-          ],
-          spacing: { after: 200 }
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersLight,
+          rows: tableRows
         })
       );
 
-      // Signatures
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 300 } }));
+
+      // Section 4: Rechtliche Bestimmungen & Signatures
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "ERKLÄRUNG UND ZUSTIMMUNG DER KANZLEI:",
+              text: "ERKLÄRUNG UND BESTÄTIGUNG DER BERATERSTELLE:",
               bold: true,
               size: 20,
-              color: "0f172a",
+              color: "0F172A",
             })
           ],
-          spacing: { before: 200, after: 60 }
+          spacing: { before: 100, after: 60 }
         })
       );
 
@@ -566,32 +874,73 @@ export default function Schuldenbereinigungsplan() {
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "Mit Übersendung dieses außergerichtlichen Schuldenbereinigungsplans bescheinigt die bevollmächtigte Beraterstelle die Richtigkeit und rechtliche Aufarbeitung der eingetragenen Forderungen anhand des Belegbestands.",
+              text: "Mit Übersendung dieses außergerichtlichen Schuldenbereinigungsplans bescheinigt die bevollmächtigte Beraterstelle die Richtigkeit und rechtliche Aufarbeitung der eingetragenen Forderungen anhand des geprüften Belegbestands gemäß § 305 Abs. 1 Nr. 1 Insolvenzordnung (InsO).",
               size: 18,
               color: "475569",
             })
           ],
-          spacing: { after: 200 }
+          spacing: { after: 250 }
         })
       );
 
+      // Signatures 2-column table
+      const borderNone = { style: DocxBorderStyle.NONE };
+      const tableBordersNone = {
+        top: borderNone,
+        bottom: borderNone,
+        left: borderNone,
+        right: borderNone,
+        insideHorizontal: borderNone,
+        insideVertical: borderNone,
+      };
+
       docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}       Unterschrift und Siegel (Kanzlei Gesetzeslotse)`,
-              bold: true,
-              size: 20,
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersNone,
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  children: [
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}`, size: 18, color: "475569" })] }),
+                    new DocxParagraph({ text: "", spacing: { after: 200 } }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "_______________________________________", color: "CBD5E1" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Unterschrift des Schuldners (${debtorName})`, bold: true, size: 18, color: "0F172A" })] })
+                  ]
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  children: [
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}`, size: 18, color: "475569" })] }),
+                    new DocxParagraph({ text: "", spacing: { after: 200 } }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "_______________________________________", color: "CBD5E1" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "Stempel & Unterschrift Beraterstelle", bold: true, size: 18, color: "0F172A" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft", size: 16, color: "64748B" })] })
+                  ]
+                }),
+              ]
             })
-          ],
-          spacing: { before: 100 }
+          ]
         })
       );
 
       const doc = new DocxDocument({
         sections: [
           {
-            properties: {},
+            properties: {
+              page: {
+                margin: {
+                  top: 1000,
+                  bottom: 1000,
+                  left: 1000,
+                  right: 1000,
+                }
+              }
+            },
             children: docChildren,
           }
         ]
@@ -643,10 +992,18 @@ export default function Schuldenbereinigungsplan() {
 
           <button
             onClick={handleGenerateDocxReport}
-            className="p-2 bg-slate-950 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-950 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
           >
             <Download className="h-4 w-4" />
-            <span>Plan-Word (DOCX) exportieren</span>
+            <span>Word (DOCX)</span>
+          </button>
+
+          <button
+            onClick={() => setShowPrintModal(true)}
+            className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+          >
+            <Printer className="h-4 w-4" />
+            <span>Drucken / PDF Export</span>
           </button>
         </div>
       </div>
@@ -1200,6 +1557,165 @@ export default function Schuldenbereinigungsplan() {
         </div>
 
       </div>
+
+      {/* Print Preview Modal for Schuldenbereinigungsplan */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">
+                  Druck- & PDF-Ansicht (§ 305 InsO Schuldenbereinigungsplan)
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>PDF herunterladen</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Container */}
+            <div className="p-8 overflow-y-auto bg-slate-200 dark:bg-slate-950 flex justify-center py-10">
+              <div
+                id="printable-schuldenbereinigungsplan-container"
+                className="printable-area bg-white text-slate-900 p-8 shadow-2xl rounded border border-slate-300 w-full max-w-[210mm] font-sans leading-relaxed text-xs space-y-5 relative"
+              >
+                {/* Header */}
+                <div className="flex justify-between items-start border-b border-slate-300 pb-3">
+                  <div>
+                    <h1 className="font-extrabold text-sm uppercase text-slate-900 tracking-wide">
+                      Gesetzeslotse BERLIN e.V.
+                    </h1>
+                    <p className="text-[10px] text-slate-500">
+                      Anerkannte Stelle nach § 305 Abs. 1 Nr. 1 InsO • Alt-Moabit 90 D • 10559 Berlin
+                    </p>
+                  </div>
+                  <div className="text-right text-[10px] font-mono text-slate-600">
+                    <p className="font-bold">Datum: {planSentDate}</p>
+                    <p>Referenz: GLB-305-{activeProfile.toUpperCase()}</p>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center pt-2 pb-1 border-b border-slate-200">
+                  <h2 className="font-black text-sm uppercase text-slate-900">
+                    Außergerichtlicher Schuldenbereinigungsplan (§ 305 Abs. 1 Nr. 1 InsO)
+                  </h2>
+                  <p className="text-[10px] text-slate-600 italic mt-0.5">
+                    Planvorschlag zur gütlichen Einigung mit allen Gläubigern
+                  </p>
+                </div>
+
+                {/* Debtor details */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] space-y-1" data-break-avoid="true">
+                  <p className="font-bold text-slate-900">Mandanten-Informationen:</p>
+                  <div className="grid grid-cols-2 gap-2 text-slate-700">
+                    <p>Name: <b className="text-slate-900">{debtorName}</b></p>
+                    <p>Geburtsdatum: <b>{debtorDob || "-"}</b></p>
+                    <p>Anschrift: <b>{debtorAddress || "-"}</b></p>
+                    <p>Zuständiges Gericht: <b>{competentCourt || "Amtsgericht Wedding"}</b></p>
+                  </div>
+                </div>
+
+                {/* Summary boxes */}
+                <div className="grid grid-cols-3 gap-3 text-center" data-break-avoid="true">
+                  <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
+                    <span className="text-[9px] uppercase font-bold text-slate-500 block">Gesamtschuld</span>
+                    <span className="text-xs font-black text-slate-900 font-mono">
+                      € {totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
+                    <span className="text-[9px] uppercase font-bold text-slate-500 block">Tilgungsangebot</span>
+                    <span className="text-xs font-black text-emerald-700 font-mono">
+                      € {planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
+                    <span className="text-[9px] uppercase font-bold text-slate-500 block">Plan-Quote</span>
+                    <span className="text-xs font-black text-indigo-700 font-mono">
+                      {averageQuotaPercent.toFixed(1)} %
+                    </span>
+                  </div>
+                </div>
+
+                {/* Plan details table */}
+                <div className="space-y-2">
+                  <h3 className="font-bold text-xs uppercase text-slate-900 border-b pb-1">
+                    Pro-Rata Verteilungsplan
+                  </h3>
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="border-b-2 border-slate-900 bg-slate-100 text-slate-700 text-[10px] uppercase font-bold">
+                        <th className="p-1.5">Gläubiger</th>
+                        <th className="p-1.5 text-right">Forderung (€)</th>
+                        <th className="p-1.5 text-right">Quote (%)</th>
+                        <th className="p-1.5 text-right">Gütliche Summe (€)</th>
+                        <th className="p-1.5 text-right">Mtl. Rate (€)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {proRataDetails.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50">
+                          <td className="p-1.5 font-medium text-slate-900">{item.name}</td>
+                          <td className="p-1.5 text-right font-mono text-slate-700">{item.amount.toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-mono text-indigo-700 font-bold">{item.quota.toFixed(1)}%</td>
+                          <td className="p-1.5 text-right font-mono text-emerald-700 font-bold">{item.proposedTotal.toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-mono text-slate-900 font-bold">{item.monthlyRate.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footnote and signoff */}
+                <div className="pt-4 border-t border-slate-300 space-y-4" data-break-avoid="true">
+                  <p className="text-[10px] text-slate-600 leading-relaxed">
+                    Mit Übersendung dieses außergerichtlichen Schuldenbereinigungsplans bescheinigt die bevollmächtigte Beraterstelle die Richtigkeit und rechtliche Aufarbeitung der eingetragenen Forderungen anhand des Belegbestands.
+                  </p>
+                  <div className="flex justify-between items-end pt-4">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-700">Ort, Datum:</p>
+                      <p className="text-xs font-mono">Berlin, den {new Date().toLocaleDateString("de-DE")}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="border-b border-slate-900 w-48 mb-1"></div>
+                      <p className="text-[10px] font-bold text-slate-900">Unterschrift / Stempel Kanzlei</p>
+                      <p className="text-[9px] text-slate-500">Gesetzeslotse BERLIN e.V.</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

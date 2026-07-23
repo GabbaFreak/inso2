@@ -19,7 +19,19 @@ import {
 import { DebtItem } from "../types";
 import { exportElementToPdf } from "../lib/pdfExport";
 import { createDocxLogoHeader } from "../lib/logoData";
-import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType as DocxWidthType } from "docx";
+import { 
+  Document as DocxDocument, 
+  Packer as DocxPacker, 
+  Paragraph as DocxParagraph, 
+  TextRun as DocxTextRun, 
+  Table as DocxTable, 
+  TableRow as DocxTableRow, 
+  TableCell as DocxTableCell, 
+  WidthType as DocxWidthType,
+  BorderStyle as DocxBorderStyle,
+  ShadingType as DocxShadingType,
+  AlignmentType as DocxAlignmentType
+} from "docx";
 import { jsPDF } from "jspdf";
 
 export default function Scheiternsbescheinigung() {
@@ -180,147 +192,298 @@ export default function Scheiternsbescheinigung() {
   const handleDownloadDocx = async () => {
     try {
       const docChildren: any[] = [];
-      docChildren.push(createDocxLogoHeader(220, 44));
+      
+      // Logo Header
+      docChildren.push(createDocxLogoHeader(220, 48));
 
-      // Title header
+      // Letterhead Metadata line
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "BESCHEINIGUNG GEMÄSS § 305 ABS. 1 NR. 1 Inso",
-              bold: true,
-              size: 24,
-              color: "1e293b",
+              text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft • Staatlich anerkannte Stelle nach § 305 Abs. 1 Nr. 1 InsO • Alt-Moabit 90 D, 10559 Berlin",
+              size: 16,
+              color: "64748B",
             })
           ],
-          spacing: { before: 200, after: 100 }
-        })
-      );
-
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "ÜBER DAS SCHEITERN DES AUSSERGERICHTLICHEN EINIGUNGSVERSUCHS",
-              bold: true,
-              size: 30,
-              color: "0f172a",
-            })
-          ],
+          alignment: DocxAlignmentType.CENTER,
           spacing: { after: 200 }
         })
       );
 
-      // Court info
+      // Kanzleireferenz Header Line
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: `Zuständiges Insolvenzgericht:  ${competentCourt}\n` +
-                `Aktenzeichen des Gerichts (sofern bekannt): ${courtFileNumber || "Nicht angegeben"}`,
-              size: 20,
-              color: "1e293b",
+              text: `Referenz: GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}   |   Datum: ${new Date().toLocaleDateString("de-DE")}`,
+              bold: true,
+              size: 18,
+              color: "475569",
             })
           ],
-          spacing: { after: 200 }
+          alignment: DocxAlignmentType.RIGHT,
+          spacing: { after: 150 }
         })
       );
 
-      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
-
-      // Section A: Schuldnerangaben
+      // Title headers
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "1. Angaben zum Schuldner / Mandant:",
+              text: "AMTLICHE BESCHEINIGUNG GEMÄSS § 305 ABS. 1 NR. 1 Inso",
               bold: true,
               size: 22,
-              color: "0f172a",
+              color: "991B1B",
             })
           ],
-          spacing: { after: 80 }
+          alignment: DocxAlignmentType.CENTER,
+          spacing: { before: 100, after: 60 }
         })
       );
 
+      docChildren.push(
+        new DocxParagraph({
+          children: [
+            new DocxTextRun({
+              text: "BESCHEINIGUNG ÜBER DAS SCHEITERN DES AUSSERGERICHTLICHEN EINIGUNGSVERSUCHS",
+              bold: true,
+              size: 26,
+              color: "0F172A",
+            })
+          ],
+          alignment: DocxAlignmentType.CENTER,
+          spacing: { after: 300 }
+        })
+      );
+
+      // Common Table Borders
+      const borderThin = { style: DocxBorderStyle.SINGLE, size: 4, color: "CBD5E1" };
+      const tableBordersLight = {
+        top: borderThin,
+        bottom: borderThin,
+        left: borderThin,
+        right: borderThin,
+        insideHorizontal: borderThin,
+        insideVertical: borderThin,
+      };
+
+      // Court info & Parties Table
       docChildren.push(
         new DocxTable({
           width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersLight,
           rows: [
+            // Header Row
             new DocxTableRow({
               children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Name, Vorname:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorName, size: 18 })] })] }),
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "1. ZUSTÄNDIGES INSOLVENZGERICHT & AKTENZEICHEN",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
               ]
             }),
             new DocxTableRow({
               children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geburtsdatum:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorDob, size: 18 })] })] }),
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Insolvenzgericht:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: competentCourt, bold: true, size: 18, color: "0F172A" })] })]
+                }),
               ]
             }),
             new DocxTableRow({
               children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anschrift:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorAddress, size: 18 })] })] }),
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gerichts-Gst. / AZ:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: courtFileNumber || "Nicht angegeben (Erst-Insolvenzantrag)", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+
+            // Section 2 Header
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "2. PERSONALANGABEN ZUM SCHULDNER (MANDANT)",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Name, Vorname:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorName, bold: true, size: 18, color: "0F172A" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geburtsdatum / Ort:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `${debtorDob} in ${debtorPob}`, size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gemeldete Anschrift:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorAddress, size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+
+            // Section 3 Header
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "3. BESCHEINIGENDE STELLE (NACH § 305 ABS. 1 NR. 1 InsO)",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anerkannte Stelle:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft", bold: true, size: 18, color: "0F172A" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Akkreditierung:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geeignete Stelle zur Insolvenzberatung gem. § 305 Abs. 1 Nr. 1 InsO", size: 18, color: "334155" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 35, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Kanzlei-Aktenzeichen:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 65, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}`, size: 18, color: "334155" })] })]
+                }),
               ]
             }),
           ]
-        }),
-        new DocxParagraph({ text: "", spacing: { after: 180 } })
+        })
       );
 
-      // Section B: Bescheinigende Stelle
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 180 } }));
+
+      // Section C: Official Statement box
       docChildren.push(
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: "2. Bescheinigende Stelle (nach § 305 Abs. 1 Nr. 1 InsO):",
+              text: "4. ERKLÄRUNG ÜBER DAS SCHEITERN DES AUSSERGERICHTLICHEN EINIGUNGSVERSUCHS:",
               bold: true,
-              size: 22,
-              color: "0f172a",
+              size: 19,
+              color: "0F172A",
             })
           ],
-          spacing: { after: 80 }
-        }),
-        new DocxTable({
-          width: { size: 100, type: DocxWidthType.PERCENTAGE },
-          rows: [
-            new DocxTableRow({
-              children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Bezeichnung:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN e.V.", bold: true, size: 18 })] })] }),
-              ]
-            }),
-            new DocxTableRow({
-              children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Akkreditierung:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Staatlich anerkannte Schuldner- und Verbraucherinsolvenzberatungsstelle", size: 18 })] })] }),
-              ]
-            }),
-            new DocxTableRow({
-              children: [
-                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Aktenzeichen:", bold: true, size: 18 })] })] }),
-                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: `GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}`, size: 18 })] })] }),
-              ]
-            }),
-          ]
-        }),
-        new DocxParagraph({ text: "", spacing: { after: 180 } })
-      );
-
-      // Section C: Scheitern des Einigungsversuchs
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "3. Erklärung über das Scheitern des außergerichtlichen Einigungsversuchs:",
-              bold: true,
-              size: 22,
-              color: "0f172a",
-            })
-          ],
-          spacing: { after: 80 }
+          spacing: { after: 60 }
         })
       );
 
@@ -328,53 +491,122 @@ export default function Scheiternsbescheinigung() {
         new DocxParagraph({
           children: [
             new DocxTextRun({
-              text: `Es wird hiermit amtlich bescheinigt, dass ein auf der Grundlage persönlicher Beratung und eingehender Prüfung der Vermögensverhältnisse des Schuldners durchgeführter außergerichtlicher Einigungsversuch zur Bereinigung der Schulden auf Basis eines Schuldenbereinigungsplans (Paragraph 305 Absatz 1 Nummer 1 InsO) erfolglos geblieben ist.\n\n` +
-                `Das Scheitern ist eingetreten am: ${new Date(failureDate).toLocaleDateString("de-DE")}\n\n` +
-                `Hauptgrund für das Scheitern des Einigungsplans:\n` +
+              text: `Es wird hiermit nach § 305 Abs. 1 Nr. 1 Insolvenzordnung (InsO) bescheinigt, dass auf der Grundlage persönlicher Beratung und eingehender Prüfung der Einkommens- und Vermögensverhältnisse des Schuldners ein außergerichtlicher Einigungsversuch zur Schuldenbereinigung mit allen bekannten Gläubigern auf Basis eines ausgearbeiteten Schuldenbereinigungsplans durchgeführt worden ist.\n\n` +
+                `Dieser außergerichtliche Einigungsversuch ist endgültig gescheitert am: ${new Date(failureDate).toLocaleDateString("de-DE")}.\n\n` +
+                `Wesentlicher Grund für das Scheitern des Schuldenbereinigungsplans:\n` +
                 `• ${failureReason}`,
-              size: 20,
-              color: "1e293b",
-            })
-          ],
-          spacing: { after: 200 }
-        })
-      );
-
-      // Section D: Creditor stats
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: `4. Verzeichnis der beteiligten Parteien:\n` +
-                `• Anzahl beteiligter Gläubiger: ${debts.length} Parteien\n` +
-                `• Gesamt-Forderungssumme: EUR ${totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
-              size: 20,
-              color: "1e293b",
-            })
-          ],
-          spacing: { after: 250 }
-        })
-      );
-
-      // Signatures
-      docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "____________________________                      ____________________________",
               size: 18,
+              color: "1E293B",
             })
+          ],
+          spacing: { after: 160 }
+        })
+      );
+
+      // Section D: Creditor stats card
+      docChildren.push(
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersLight,
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 100, type: DocxWidthType.PERCENTAGE },
+                  columnSpan: 2,
+                  shading: { fill: "1E293B" },
+                  margins: { top: 100, bottom: 100, left: 140, right: 140 },
+                  children: [
+                    new DocxParagraph({
+                      children: [
+                        new DocxTextRun({
+                          text: "5. STATISTIK DER BETEILIGTEN GLÄUBIGER & FORDERUNGEN",
+                          bold: true,
+                          size: 19,
+                          color: "FFFFFF",
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anzahl einbezogener Gläubiger:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `${debts.length} Gläubiger-Positionen`, size: 18, color: "0F172A" })] })]
+                }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  shading: { fill: "F8FAFC" },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesamte geprüfte Forderungssumme:", bold: true, size: 18, color: "334155" })] })]
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 80, bottom: 80, left: 140, right: 140 },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: `EUR ${totalAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, bold: true, size: 18, color: "991B1B" })] })]
+                }),
+              ]
+            }),
           ]
         })
       );
 
+      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 300 } }));
+
+      // Signatures 2-column table
+      const borderNone = { style: DocxBorderStyle.NONE };
+      const tableBordersNone = {
+        top: borderNone,
+        bottom: borderNone,
+        left: borderNone,
+        right: borderNone,
+        insideHorizontal: borderNone,
+        insideVertical: borderNone,
+      };
+
       docChildren.push(
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({
-              text: "Ort, Datum & Unterschrift Schuldner                Stempel & amtliche Unterschrift der Stelle",
-              size: 18,
-              color: "64748b",
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          borders: tableBordersNone,
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  children: [
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}`, size: 18, color: "475569" })] }),
+                    new DocxParagraph({ text: "", spacing: { after: 200 } }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "_______________________________________", color: "CBD5E1" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Unterschrift des Schuldners (${debtorName})`, bold: true, size: 18, color: "0F172A" })] })
+                  ]
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                  children: [
+                    new DocxParagraph({ children: [new DocxTextRun({ text: `Berlin, den ${new Date().toLocaleDateString("de-DE")}`, size: 18, color: "475569" })] }),
+                    new DocxParagraph({ text: "", spacing: { after: 200 } }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "_______________________________________", color: "CBD5E1" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "Stempel & amtliche Unterschrift der Stelle", bold: true, size: 18, color: "0F172A" })] }),
+                    new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN Kanzlei-Gemeinschaft", size: 16, color: "64748B" })] })
+                  ]
+                }),
+              ]
             })
           ]
         })
@@ -383,7 +615,16 @@ export default function Scheiternsbescheinigung() {
       const doc = new DocxDocument({
         sections: [
           {
-            properties: {},
+            properties: {
+              page: {
+                margin: {
+                  top: 1000,
+                  bottom: 1000,
+                  left: 1000,
+                  right: 1000,
+                }
+              }
+            },
             children: docChildren,
           }
         ]

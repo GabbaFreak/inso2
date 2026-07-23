@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { FileText, Download, Check, Copy, User, Calendar, MapPin, Building, ShieldCheck, RefreshCw } from "lucide-react";
+import { FileText, Download, Check, Copy, User, Calendar, MapPin, Building, ShieldCheck, RefreshCw, Printer, X } from "lucide-react";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { createDocxLogoHeader } from "../lib/logoData";
 import { logGesetzeslotseActivity } from "../lib/history";
+import { exportElementToPdf } from "../lib/pdfExport";
 
 export default function VollmachtGenerator() {
   const [copied, setCopied] = useState(false);
@@ -26,6 +27,12 @@ export default function VollmachtGenerator() {
   const [currentDate, setCurrentDate] = useState(() => {
     return new Date().toLocaleDateString("de-DE");
   });
+
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+
+  const handleExportPdf = async () => {
+    await exportElementToPdf("printable-vollmacht-container", `Glaeubigervollmacht_${debtorName.replace(/\s+/g, "_")}`);
+  };
 
   const loadActiveDebtorData = () => {
     const activeName = localStorage.getItem("gesetzeslotse_active_debtor_name");
@@ -723,10 +730,19 @@ Handunterschrift des Vollmachtgebers (Mandanten)
             <div className="flex gap-2">
               <button 
                 onClick={downloadTextFile}
-                className="flex-1 py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
+                className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
                 id="download-bevollmaechtigung-txt"
               >
                 Als Textdatei (.txt) sichern
+              </button>
+
+              <button 
+                onClick={() => setShowPrintModal(true)}
+                className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                id="print-bevollmaechtigung-modal-btn"
+              >
+                <Printer className="h-4 w-4" />
+                Drucken / PDF Export
               </button>
             </div>
 
@@ -740,6 +756,99 @@ Handunterschrift des Vollmachtgebers (Mandanten)
           </div>
         </div>
       </div>
+
+      {/* Print Preview Modal for Vollmacht */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider">
+                  Druckansicht (DIN 5008) — Gläubigervollmacht
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Drucken</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>PDF herunterladen</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body / Printable Letter Container */}
+            <div className="p-8 overflow-y-auto bg-slate-200 dark:bg-slate-950 flex justify-center py-10">
+              <div
+                id="printable-vollmacht-container"
+                className="printable-area bg-white text-slate-900 p-10 shadow-2xl rounded border border-slate-300 w-full max-w-[210mm] font-serif leading-relaxed text-xs space-y-5 relative"
+              >
+                {/* Header */}
+                <div className="flex justify-between items-center border-b border-slate-300 pb-3">
+                  <div>
+                    <h1 className="font-extrabold text-sm uppercase text-slate-900 font-sans tracking-wide">
+                      {firmName}
+                    </h1>
+                    <p className="text-[10px] text-slate-500 font-sans">
+                      {firmBranch} • {firmAddress}
+                    </p>
+                  </div>
+                  <div className="text-right text-[10px] font-sans text-slate-600">
+                    <p className="font-bold">Datum: {currentDate}</p>
+                    <p>Status: Gültig nach § 305 InsO</p>
+                  </div>
+                </div>
+
+                {/* Document Body */}
+                <div className="pt-2 font-mono text-xs text-slate-900 leading-relaxed whitespace-pre-wrap">
+                  {getVollmachtText()}
+                </div>
+
+                {/* Signatures */}
+                <div className="pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 font-sans text-[11px]" data-break-avoid="true">
+                  <div>
+                    <p className="text-slate-500">Ort, Datum:</p>
+                    <p className="font-bold text-slate-800 border-b border-slate-400 pb-1 mt-1">
+                      Berlin, den {currentDate}
+                    </p>
+                    <p className="text-[9px] text-slate-400 mt-1">Eigenhändige Unterschrift Mandant:in</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-slate-500">Für die Kanzlei / Anerkannte Stelle:</p>
+                    <p className="font-bold text-slate-800 border-b border-slate-400 pb-1 mt-1">
+                      {firmName}
+                    </p>
+                    <p className="text-[9px] text-slate-400 mt-1">Stempel / Amts-Signatur</p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

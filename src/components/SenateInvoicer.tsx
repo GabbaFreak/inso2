@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { DebtItem } from "../types";
+import { exportElementToPdf } from "../lib/pdfExport";
+import { LOGO_DATA_URL } from "../lib/logoData";
 
 export default function SenateInvoicer() {
   const [activeProfile, setActiveProfile] = useState<string>("schmidt");
@@ -950,158 +952,233 @@ export default function SenateInvoicer() {
             </div>
 
             {/* Document body preview */}
-            <div className="p-6 text-slate-800 max-h-[440px] overflow-y-auto font-sans leading-normal text-xs space-y-4" id="senate-invoice-dina4-prev">
+            <div className="printable-area p-8 bg-white text-slate-800 max-h-[520px] overflow-y-auto font-sans leading-relaxed text-xs space-y-5" id="senate-invoice-dina4-prev">
               
-              {/* Header Letterhead */}
-              <div className="flex justify-between items-start gap-4">
-                <div className="text-[10px] text-slate-400">
-                  <p className="font-bold text-slate-600 uppercase">Gesetzeslotse BERLIN e.V.</p>
-                  <p>Alt-Moabit 90 D • 10559 Berlin</p>
+              {/* Header Letterhead with Official Logo */}
+              <div className="flex justify-between items-start gap-4 border-b border-slate-300 pb-4">
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={LOGO_DATA_URL} 
+                    alt="Gesetzeslotse BERLIN e.V. Logo" 
+                    className="h-12 w-auto object-contain shrink-0" 
+                  />
+                  <div>
+                    <h1 className="font-extrabold text-sm uppercase text-slate-900 tracking-wide">
+                      Gesetzeslotse BERLIN e.V.
+                    </h1>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      Anerkannte Stelle nach § 305 Abs. 1 Nr. 1 InsO • Alt-Moabit 90 D • 10559 Berlin
+                    </p>
+                    <p className="text-[9px] text-slate-400">
+                      Zulassungs-ID: SenJustVaD-BE-305-1998 • Tel: (030) 9876-5432
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right text-[10px] font-mono text-slate-500">
-                  <p className="font-bold">Rech-Nr: {invoiceNumber}</p>
+                <div className="text-right text-[10px] font-mono text-slate-600 bg-slate-50 p-2.5 rounded border border-slate-200 shrink-0">
+                  <p className="font-bold text-slate-900">Rechnungs-Nr.: {invoiceNumber}</p>
                   <p>Datum: {new Date(billingDate).toLocaleDateString("de-DE")}</p>
+                  <p>Kanzlei-AZ: {fileReference}</p>
                 </div>
               </div>
 
-              {/* Recipient Address */}
-              <div className="border-l border-slate-300 pl-3">
-                {modelType === "senat_flat" ? (
-                  <div className="text-slate-700 leading-normal">
-                    <p className="font-extrabold text-[11px] text-slate-900">Senatsverwaltung für Justiz, Vielfalt und Antidiskriminierung</p>
-                    <p>Referat II D - Schuldnerberatungsstellen</p>
-                    <p>Salzburger Str. 21-25</p>
-                    <p className="font-semibold">10825 Berlin (Schöneberg)</p>
-                  </div>
-                ) : (
-                  <div className="text-slate-700 leading-normal">
-                    <p className="font-extrabold text-[11px] text-slate-900">Amtsgericht Wedding</p>
-                    <p>Zentrale Erstellungsstelle für Beratungshilfe</p>
-                    <p>Brunnenplatz 1</p>
-                    <p className="font-semibold">13357 Berlin</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Title Header */}
-              <div className="pt-2">
-                <h3 className="font-black text-slate-900 border-b-2 border-slate-850 pb-1.5 uppercase text-xs md:text-sm tracking-wide">
-                  {modelType === "senat_flat" 
-                    ? "Abrechnungsantrag für außergerichtliche Beratungshilfe" 
-                    : "Antrag auf Festsetzung der Vergütung für Beratungshilfe"}
-                </h3>
-              </div>
-
-              {/* Client Specification Panel */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 leading-relaxed relative">
-                <p className="font-bold text-slate-900 mb-1 flex items-center gap-1.5">
-                  <User className="h-4.5 w-4.5 text-slate-500" />
-                  Gegenstand der Beratung: {debtorName}
-                </p>
-                <div className="grid grid-cols-2 gap-x-4 text-[11px] text-slate-600">
-                  <p>Aktenzeichen: <span className="font-mono text-slate-950 font-bold">{fileReference}</span></p>
-                  <p>Beratungshilfe-AZ: <span className="text-slate-950 font-bold">{shReference}</span></p>
-                  <p>Erfasste Gläubiger: <span className="text-slate-950 font-bold">{creditorsCount}</span></p>
-                </div>
-              </div>
-
-              {/* Table of items */}
-              <div className="space-y-1 text-[11px]">
-                <div className="grid grid-cols-12 font-bold uppercase text-slate-400 pb-1 border-b border-slate-100">
-                  <div className="col-span-8">Gegenstand / Gebührentatbestand</div>
-                  <div className="col-span-2 text-center">VV RVG</div>
-                  <div className="col-span-2 text-right">Summe</div>
-                </div>
-
-                <div className="divide-y divide-slate-100 max-h-[140px] overflow-y-auto">
+              {/* Recipient Window & Metadata */}
+              <div className="grid grid-cols-12 gap-4 items-start pt-1">
+                {/* Empfängerfenster DIN 5008 */}
+                <div className="col-span-7 p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-[11px] leading-relaxed">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block mb-1">Empfänger (Kostenträger):</span>
                   {modelType === "senat_flat" ? (
-                    <>
-                      {flatBasis && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Mittel-Basispauschale Land Berlin für anerkannte Schuldnerberatungsstellen ({creditorsCount} Gläubiger)</div>
-                          <div className="col-span-2 text-center text-slate-400">-</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ {getFlatRateReward().toFixed(2)}</div>
-                        </div>
-                      )}
-                      {flatScanner && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">IT-Aufwand & Digitale Koordination (Scanzuschlag)</div>
-                          <div className="col-span-2 text-center text-slate-400">-</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 25,00</div>
-                        </div>
-                      )}
-                      {additionalBonus && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Erhöhter Integrationsaufwand (Komplexförderung)</div>
-                          <div className="col-span-2 text-center text-slate-400">-</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 75,00</div>
-                        </div>
-                      )}
-                    </>
+                    <div>
+                      <p className="font-extrabold text-slate-900">Senatsverwaltung für Justiz, Vielfalt und Antidiskriminierung</p>
+                      <p>Referat II D - Schuldnerberatungsstellen-Erstattung</p>
+                      <p>Salzburger Str. 21-25</p>
+                      <p className="font-semibold">10825 Berlin (Schöneberg)</p>
+                    </div>
                   ) : (
-                    <>
-                      {rvg2503 && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Geschäftsgebühr (außergerichtliches Verfahren)</div>
-                          <div className="col-span-2 text-center text-slate-500 font-mono">2503</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 85,00</div>
-                        </div>
-                      )}
-                      {rvg2508 && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Einigungsgebühr (Einigung mit Gläubigern)</div>
-                          <div className="col-span-2 text-center text-slate-500 font-mono">2508</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 150,00</div>
-                        </div>
-                      )}
-                      {rvg7002 && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Entgelte für Postdienstleistungen & Telekommunikation</div>
-                          <div className="col-span-2 text-center text-slate-500 font-mono">7002</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 20,00</div>
-                        </div>
-                      )}
-                      {rvg7000 && (
-                        <div className="grid grid-cols-12 py-1.5 text-slate-700">
-                          <div className="col-span-8">Kopierauslagen & Scan-Bereitstellung</div>
-                          <div className="col-span-2 text-center text-slate-500 font-mono">7000</div>
-                          <div className="col-span-2 text-right font-bold text-slate-950">€ 15,00</div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Subsumptions details */}
-                <div className="border-t border-slate-200 pt-2 space-y-1 font-semibold text-right">
-                  <div className="flex justify-end gap-12 text-slate-500 text-[10px]">
-                    <span>Zwischensumme Netto:</span>
-                    <span className="font-mono text-slate-900">€ {getSubtotal().toFixed(2)}</span>
-                  </div>
-                  {withVat && (
-                    <div className="flex justify-end gap-12 text-slate-500 text-[10px]">
-                      <span>Umsatzsteuer (19%):</span>
-                      <span className="font-mono text-slate-900">€ {getVatAmount().toFixed(2)}</span>
+                    <div>
+                      <p className="font-extrabold text-slate-900">Amtsgericht Wedding</p>
+                      <p>Zentrale Festsetzungsstelle für Beratungshilfe</p>
+                      <p>Brunnenplatz 1</p>
+                      <p className="font-semibold">13357 Berlin</p>
                     </div>
                   )}
-                  <div className="flex justify-end gap-12 text-[11px] font-black font-sans text-rose-600 pt-1.5 border-t border-slate-100">
-                    <span>Erstattungsbetrag (GESAMT):</span>
-                    <span className="font-mono text-rose-600">€ {getTotalPrice().toFixed(2)}</span>
-                  </div>
+                </div>
+
+                {/* Verfahrens-Referenz-Box */}
+                <div className="col-span-5 p-3 border border-slate-200 rounded-lg text-[10px] space-y-1 text-slate-700 bg-slate-50">
+                  <p className="font-bold text-slate-900 uppercase text-[9px] tracking-wide border-b border-slate-200 pb-0.5">Verfahrensdaten</p>
+                  <p>Beratungshilfe-AZ: <b className="text-slate-900 font-mono">{shReference}</b></p>
+                  <p>Schuldner/Mandant: <b className="text-slate-900">{debtorName}</b></p>
+                  <p>Erfasste Gläubiger: <b className="text-indigo-700">{creditorsCount} Parteien</b></p>
                 </div>
               </div>
 
-              {/* Bank Transfer Instructions */}
-              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-500 leading-normal">
-                <span className="font-black text-slate-700 block uppercase text-[8px] tracking-wider mb-1">Empfänger-Bankverbindung der anerkannten Stelle:</span>
-                <p>Begünstigter: <b className="text-slate-800">{recipient}</b> • Bank: <b>{bankName}</b></p>
-                <p>IBAN: <b className="text-slate-800 font-mono">{iban}</b> • BIC: <b className="font-mono">{bic}</b></p>
+              {/* Document Title */}
+              <div className="pt-2 border-b-2 border-slate-900 pb-2">
+                <h2 className="font-black text-sm uppercase text-slate-900 tracking-wide">
+                  {modelType === "senat_flat" 
+                    ? "Kostenrechnung / Erstattungsantrag nach Berliner Förderrichtlinie (§ 305 InsO)" 
+                    : "Antrag auf Vergütungsfestsetzung für Beratungshilfe (§ 45 RVG / VV 2503 ff.)"}
+                </h2>
+                <p className="text-[10px] text-slate-600 italic mt-0.5">
+                  Abrechnung der Aufwendungen für die Durchführung des außergerichtlichen Einigungsversuchs
+                </p>
+              </div>
+
+              {/* Klare Tabellarische Gebührenaufstellung */}
+              <div className="space-y-2">
+                <h3 className="font-bold text-xs uppercase text-slate-900 tracking-wider">
+                  Gebührenaufstellung & Erstattungspositionen
+                </h3>
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="border-b-2 border-slate-900 bg-slate-100 text-slate-800 text-[10px] uppercase font-bold">
+                      <th className="p-2 w-10 text-center">Pos.</th>
+                      <th className="p-2">Gebührentatbestand / Gegenstand</th>
+                      <th className="p-2 text-center w-28">Grundlage</th>
+                      <th className="p-2 text-right w-24">Betrag (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-slate-800">
+                    {modelType === "senat_flat" ? (
+                      <>
+                        {flatBasis && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">1</td>
+                            <td className="p-2 font-medium">
+                              Landes-Basispauschale Berlin für anerkannte Schuldnerberatungsstellen
+                              <span className="block text-[9px] text-slate-500 font-normal">
+                                Pauschale Erstattung für Schuldenbereinigungsverfahren ({creditorsCount} Gläubiger)
+                              </span>
+                            </td>
+                            <td className="p-2 text-center text-slate-600 font-mono text-[10px]">§ 305 InsO / Senat</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">
+                              {getFlatRateReward().toFixed(2)} €
+                            </td>
+                          </tr>
+                        )}
+                        {flatScanner && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">2</td>
+                            <td className="p-2 font-medium">
+                              IT-Aufwand & Digitale Koordination (Digitalisierungs- & Scanzuschlag)
+                            </td>
+                            <td className="p-2 text-center text-slate-600 font-mono text-[10px]">Zuschlag IT</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">25,00 €</td>
+                          </tr>
+                        )}
+                        {additionalBonus && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">3</td>
+                            <td className="p-2 font-medium">
+                              Erhöhter Integrationsaufwand (Komplexförderungs-Bonus)
+                            </td>
+                            <td className="p-2 text-center text-slate-600 font-mono text-[10px]">Sonderzuschlag</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">75,00 €</td>
+                          </tr>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {rvg2503 && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">1</td>
+                            <td className="p-2 font-medium">Geschäftsgebühr (außergerichtliches Vertretungsverfahren)</td>
+                            <td className="p-2 text-center text-slate-700 font-mono text-[10px]">VV 2503 RVG</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">85,00 €</td>
+                          </tr>
+                        )}
+                        {rvg2508 && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">2</td>
+                            <td className="p-2 font-medium">Einigungsgebühr (Erfolgreiche oder gütliche Gläubigereinigung)</td>
+                            <td className="p-2 text-center text-slate-700 font-mono text-[10px]">VV 2508 RVG</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">150,00 €</td>
+                          </tr>
+                        )}
+                        {rvg7002 && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">3</td>
+                            <td className="p-2 font-medium">Pauschale für Entgelte für Postdienstleistungen & Telekommunikation</td>
+                            <td className="p-2 text-center text-slate-700 font-mono text-[10px]">VV 7002 RVG</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">20,00 €</td>
+                          </tr>
+                        )}
+                        {rvg7000 && (
+                          <tr className="hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500">4</td>
+                            <td className="p-2 font-medium">Dokumentenpauschale & Kopierauslagen für Gläubigeranschreiben</td>
+                            <td className="p-2 text-center text-slate-700 font-mono text-[10px]">VV 7000 RVG</td>
+                            <td className="p-2 text-right font-mono font-bold text-slate-900">15,00 €</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals Summary Card */}
+              <div className="p-3 bg-slate-50 border border-slate-300 rounded-lg text-[11px] space-y-1.5 font-sans">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Zwischensumme (Netto Erstattungsbetrag):</span>
+                  <span className="font-mono font-bold text-slate-900">{getSubtotal().toFixed(2)} €</span>
+                </div>
+                {withVat ? (
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Umsatzsteuer (19% gesetzlich):</span>
+                    <span className="font-mono font-bold text-slate-900">{getVatAmount().toFixed(2)} €</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center text-slate-500 text-[10px]">
+                    <span>Umsatzsteuer (19%):</span>
+                    <span>0,00 € (Steuerfreie Gemeinnützigkeit gem. § 4 Nr. 26 UStG)</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-300 font-black text-xs text-indigo-900">
+                  <span className="uppercase tracking-wide">Auszuzahlender Erstattungsbetrag (GESAMT):</span>
+                  <span className="font-mono text-sm text-indigo-800 font-extrabold">{getTotalPrice().toFixed(2)} €</span>
+                </div>
+              </div>
+
+              {/* Bank Transfer Block */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-700 space-y-1">
+                <span className="font-bold text-slate-900 uppercase text-[9px] tracking-wider block">
+                  Bankverbindung für die Erstattung
+                </span>
+                <div className="grid grid-cols-2 gap-2 font-mono">
+                  <p>Zahlungsempfänger: <b className="font-sans text-slate-900">{recipient}</b></p>
+                  <p>Kreditinstitut: <b className="font-sans text-slate-900">{bankName}</b></p>
+                  <p>IBAN: <b className="text-slate-900 font-bold">{iban}</b></p>
+                  <p>BIC: <b className="text-slate-900 font-bold">{bic}</b></p>
+                </div>
+                <p className="text-[9px] text-slate-500 italic mt-1 pt-1 border-t border-slate-200">
+                  Verwendungszweck bei Anweisung: <b>{invoiceNumber} / {fileReference} / {debtorName}</b>
+                </p>
+              </div>
+
+              {/* Legal Confirmation and Signoff */}
+              <div className="pt-2 text-[9px] text-slate-500 leading-relaxed border-t border-slate-200 space-y-3" data-break-avoid="true">
+                <p>
+                  Geprüft nach den Leitlinien für die Gewährung von Kanzlei-Erstattungen im Land Berlin (Stand 2026). Mit Übersendung dieser Urkunde wird die ordnungsgemäße Durchführung des außergerichtlichen Vergleichsversuchs gem. § 305 Abs. 1 Nr. 1 InsO versichert.
+                </p>
+
+                <div className="flex justify-between items-end pt-3">
+                  <div>
+                    <p className="font-bold text-slate-700">Ort, Datum:</p>
+                    <p className="font-mono text-slate-900">Berlin, den {new Date(billingDate).toLocaleDateString("de-DE")}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="border-b border-slate-900 w-48 mb-1"></div>
+                    <p className="font-bold text-slate-900">Gesetzeslotse BERLIN e.V.</p>
+                    <p className="text-slate-500">Stempel & amtliche Signatur</p>
+                  </div>
+                </div>
               </div>
 
             </div>
 
             {/* Document Actions Footer inside CARD */}
-            <div className="border-t border-slate-150 p-4 bg-slate-50 text-slate-700 flex gap-3 justify-end dark:bg-slate-950/20 dark:border-slate-850">
+            <div className="border-t border-slate-150 p-4 bg-slate-50 text-slate-700 flex gap-2 justify-end dark:bg-slate-950/20 dark:border-slate-850">
               <button
                 onClick={() => window.print()}
                 className="py-2 px-3 border border-slate-350 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -1111,11 +1188,19 @@ export default function SenateInvoicer() {
               </button>
 
               <button
+                onClick={() => exportElementToPdf("senate-invoice-dina4-prev", `Senatsabrechnung_${invoiceNumber}`)}
+                className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm"
+              >
+                <Download className="h-4 w-4" />
+                PDF
+              </button>
+
+              <button
                 onClick={downloadInvoiceDocx}
-                className="py-2.5 px-4 bg-slate-900 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                className="py-2 px-3 bg-slate-900 hover:bg-slate-850 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
               >
                 <Download className="h-4 w-4 text-amber-400" />
-                Gebührenbescheid als Word (DOCX) sichern
+                Word (DOCX)
               </button>
             </div>
 

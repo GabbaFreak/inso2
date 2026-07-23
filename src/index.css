@@ -39,27 +39,30 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 6mm 0 12mm 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     background: white !important;
     color: black !important;
+    font-size: 10.5pt !important;
+    line-height: 1.45 !important;
   }
   .no-print, nav, header, button, .no-print * {
     display: none !important;
   }
   @page {
     size: A4 portrait;
-    margin: 22mm 15mm 20mm 15mm;
+    margin: 15mm 12mm 15mm 12mm;
   }
 
   /* Running Page Header strictly 2 columns with absolute positioning relative to top sheet margin */
   .print-page-header {
     position: fixed !important;
-    top: -16mm !important;
+    top: -11mm !important;
     left: 0 !important;
     right: 0 !important;
-    height: 12mm !important;
+    height: 10mm !important;
     display: flex !important;
     flex-direction: row !important;
     justify-content: space-between !important;
@@ -73,7 +76,7 @@
   }
 
   .print-page-header img {
-    max-height: 9mm !important;
+    max-height: 8mm !important;
     width: auto !important;
     object-fit: contain !important;
     flex-shrink: 0 !important;
@@ -82,10 +85,10 @@
   /* Running Page Footer */
   .print-page-footer {
     position: fixed !important;
-    bottom: -14mm !important;
+    bottom: -11mm !important;
     left: 0 !important;
     right: 0 !important;
-    height: 8mm !important;
+    height: 7mm !important;
     display: flex !important;
     flex-direction: row !important;
     justify-content: space-between !important;
@@ -109,38 +112,42 @@
     display: table-header-group !important;
   }
 
-  /* Page break rules for print and pdf rendering */
+  /* Target specific non-splittable blocks for clean page breaks */
   tr,
   table tr,
   tbody tr,
-  section,
-  .print-section,
-  .printable-area tr,
-  .printable-area table tr,
-  .printable-area tbody tr,
-  .printable-area section,
-  .printable-area .print-section,
-  .printable-area .space-y-6 > div,
-  .printable-area .space-y-4 > div,
-  .printable-area .space-y-3 > div,
-  .printable-area .border,
-  .printable-area .break-inside-avoid {
+  .break-inside-avoid,
+  [data-break-avoid="true"],
+  .signature-block,
+  .stamp-block,
+  .keep-together {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  p {
+    orphans: 2;
+    widows: 2;
+  }
 }
 
-/* Also apply page-break-inside avoid to printable area sub-elements for html2canvas rendering */
-.printable-area tr,
-.printable-area table tr,
-.printable-area tbody tr,
-.printable-area section,
-.printable-area .print-section,
-.printable-area .space-y-6 > div,
-.printable-area .space-y-4 > div,
-.printable-area .space-y-3 > div,
-.printable-area .border,
-.printable-area .break-inside-avoid {
+/* Specific elements for canvas and print layout */
+.break-inside-avoid,
+[data-break-avoid="true"],
+.signature-block,
+.stamp-block,
+.keep-together {
   break-inside: avoid !important;
   page-break-inside: avoid !important;
 }
+
+h1, h2, h3, h4, h5, h6 {
+  break-after: avoid !important;
+  page-break-after: avoid !important;
+}
+

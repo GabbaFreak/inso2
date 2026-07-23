@@ -2,7 +2,14 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
 export async function exportElementToPdf(elementOrId: HTMLElement | string, filename: string) {
-  const element = typeof elementOrId === "string" ? document.getElementById(elementOrId) : elementOrId;
+  let element = typeof elementOrId === "string" ? document.getElementById(elementOrId) : elementOrId;
+  
+  if (!element) {
+    // Retry shortly in case modal/element was just toggled
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    element = typeof elementOrId === "string" ? document.getElementById(elementOrId) : elementOrId;
+  }
+
   if (!element) {
     console.error("Element not found for PDF export:", elementOrId);
     alert("Fehler: Druckansicht konnte nicht für den PDF-Export gefunden werden.");
@@ -18,6 +25,9 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
 
     const pageWidth = 210; // A4 width in mm
     const pageHeight = 297; // A4 height in mm
+    const margin = 10; // 10mm margin on each side
+    const contentWidth = pageWidth - 2 * margin; // 190mm
+    const contentHeight = pageHeight - 2 * margin; // 277mm
 
     // 1. Check if element contains explicit page sheets (.pdf-page or [data-pdf-page])
     const pageSheets = Array.from(element.querySelectorAll<HTMLElement>(".pdf-page, [data-pdf-page]"));
@@ -28,7 +38,7 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
         const canvas = await captureCanvas(sheet);
         if (i > 0) pdf.addPage();
         const imgData = canvas.toDataURL("image/png");
-        pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+        pdf.addImage(imgData, "PNG", margin, margin, contentWidth, contentHeight, undefined, "FAST");
       }
       pdf.save(filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
       return;
@@ -36,26 +46,27 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
 
     // 2. Render main container
     const canvas = await captureCanvas(element);
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+    const imgWidth = contentWidth;
+    const imgHeight = (canvas.height * contentWidth) / canvas.width;
 
-    // Single page document check (fits within A4 or slightly larger up to 325mm)
-    if (imgHeight <= 325) {
+    // Single page document check
+    if (imgHeight <= contentHeight) {
       const imgData = canvas.toDataURL("image/png");
-      const renderHeight = Math.min(imgHeight, pageHeight);
-      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, renderHeight, undefined, "FAST");
+      pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight, undefined, "FAST");
       pdf.save(filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
       return;
     }
 
-    // Multi-page document (> 325mm): Slice at smart element boundaries
+    // Multi-page document: Slice at smart element boundaries
     const elementRect = element.getBoundingClientRect();
-    const pxPerMm = canvas.width / pageWidth;
-    const pageHeightPx = pageHeight * pxPerMm;
+    const pxPerMm = canvas.width / contentWidth;
+    const pageHeightPx = contentHeight * pxPerMm;
 
     // Find all block elements to locate safe gap boundaries
     const children = Array.from(
-      element.querySelectorAll<HTMLElement>("p, tr, h1, h2, h3, h4, section, div, .border, table, [data-break-avoid]")
+      element.querySelectorAll<HTMLElement>(
+        "p, tr, h1, h2, h3, h4, h5, h6, section, article, table, .border, [data-break-avoid], .keep-together, .signature-block"
+      )
     );
 
     const safeGapsPx: number[] = [];
@@ -78,8 +89,8 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
       let sliceYPx = targetYPx;
 
       if (targetYPx < canvas.height) {
-        // Look for element boundaries near the bottom 18% of the page
-        const minGap = currentYPx + pageHeightPx * 0.82;
+        // Look for element boundaries near the bottom 25% of the page
+        const minGap = currentYPx + pageHeightPx * 0.75;
         const validGaps = safeGapsPx.filter((y) => y <= targetYPx && y >= minGap);
 
         if (validGaps.length > 0) {
@@ -113,8 +124,17 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
         );
 
         const pageImgData = tempCanvas.toDataURL("image/png");
-        const sliceHeightMm = (sliceHeightPx * pageWidth) / canvas.width;
-        pdf.addImage(pageImgData, "PNG", 0, 0, pageWidth, Math.min(sliceHeightMm, pageHeight), undefined, "FAST");
+        const sliceHeightMm = (sliceHeightPx * contentWidth) / canvas.width;
+        pdf.addImage(
+          pageImgData,
+          "PNG",
+          margin,
+          margin,
+          contentWidth,
+          Math.min(sliceHeightMm, contentHeight),
+          undefined,
+          "FAST"
+        );
       }
 
       currentYPx = sliceYPx;
@@ -128,14 +148,15 @@ export async function exportElementToPdf(elementOrId: HTMLElement | string, file
 }
 
 async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
-  return html2canvas(el, {
-    scale: 2,
+  const options = {
+    scale: 1.5,
     useCORS: true,
     allowTaint: true,
     logging: false,
     backgroundColor: "#ffffff",
     windowWidth: 1200,
-    onclone: (clonedDoc, clonedElement) => {
+    imageTimeout: 15000,
+    onclone: (clonedDoc: Document, clonedElement: HTMLElement) => {
       // 1. Force light mode on cloned document and cloned element
       if (clonedDoc.documentElement) {
         clonedDoc.documentElement.classList.remove("dark");
@@ -177,26 +198,89 @@ async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
       const styleElements = Array.from(clonedDoc.querySelectorAll("style"));
       styleElements.forEach((styleTag) => {
         if (styleTag.textContent) {
-          styleTag.textContent = styleTag.textContent
-            .replace(/oklch\([^)]+\)/gi, (m) => oklchToRgba(m))
-            .replace(/oklab\([^)]+\)/gi, "#0f172a")
-            .replace(/color-mix\([^)]+\)/gi, "rgba(15,23,42,0.1)")
-            .replace(/oklch/gi, "rgb(15,23,42)");
+          styleTag.textContent = replaceModernCssColors(styleTag.textContent);
         }
       });
 
       const allNodes = [clonedElement, ...Array.from(clonedElement.querySelectorAll<HTMLElement>("*"))];
       allNodes.forEach((node) => {
         if (node.style && node.style.cssText) {
-          node.style.cssText = node.style.cssText
-            .replace(/oklch\([^)]+\)/gi, (m) => oklchToRgba(m))
-            .replace(/oklab\([^)]+\)/gi, "#0f172a")
-            .replace(/color-mix\([^)]+\)/gi, "rgba(15,23,42,0.1)")
-            .replace(/oklch/gi, "rgb(15,23,42)");
+          node.style.cssText = replaceModernCssColors(node.style.cssText);
         }
       });
     },
-  });
+  };
+
+  try {
+    return await html2canvas(el, options);
+  } catch (err) {
+    console.warn("Primary html2canvas capture failed, trying simplified capture:", err);
+    return await html2canvas(el, {
+      scale: 1,
+      backgroundColor: "#ffffff",
+      logging: false,
+      allowTaint: true,
+      useCORS: false,
+    });
+  }
+}
+
+function replaceModernCssColors(cssText: string): string {
+  if (!cssText) return cssText;
+
+  const targetPrefixes = ["oklch(", "oklab(", "color-mix(", "light-dark(", "lab(", "hwb("];
+
+  let result = cssText;
+  let guard = 0;
+
+  while (guard < 10000) {
+    guard++;
+    let earliestIdx = -1;
+    let foundPrefix = "";
+
+    for (const prefix of targetPrefixes) {
+      const idx = result.indexOf(prefix);
+      if (idx !== -1 && (earliestIdx === -1 || idx < earliestIdx)) {
+        earliestIdx = idx;
+        foundPrefix = prefix;
+      }
+    }
+
+    if (earliestIdx === -1) break;
+
+    let openCount = 0;
+    let endIdx = -1;
+    for (let i = earliestIdx; i < result.length; i++) {
+      if (result[i] === "(") {
+        openCount++;
+      } else if (result[i] === ")") {
+        openCount--;
+        if (openCount === 0) {
+          endIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (endIdx === -1) {
+      break;
+    }
+
+    const matchedExpr = result.substring(earliestIdx, endIdx + 1);
+    let fallback = "#0f172a";
+
+    if (foundPrefix === "oklch(") {
+      fallback = oklchToRgba(matchedExpr);
+    } else if (foundPrefix === "color-mix(") {
+      fallback = "rgba(15, 23, 42, 0.1)";
+    } else if (foundPrefix === "light-dark(") {
+      fallback = "#0f172a";
+    }
+
+    result = result.substring(0, earliestIdx) + fallback + result.substring(endIdx + 1);
+  }
+
+  return result.replace(/oklch\s*\(?/gi, "#0f172a").replace(/oklab\s*\(?/gi, "#0f172a");
 }
 
 function oklchToRgba(str: string): string {
@@ -246,3 +330,4 @@ function oklchToRgba(str: string): string {
   }
   return `rgb(${r}, ${g}, ${b})`;
 }
+
