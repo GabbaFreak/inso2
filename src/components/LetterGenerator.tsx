@@ -3,6 +3,7 @@ import { FileDown, Copy, Check, FileText, Send, User, MapPin, Plus, Trash2, Book
 import { LetterData, LetterTemplateType, Creditor } from "../types";
 import { logGesetzeslotseActivity } from "../lib/history";
 import { exportElementToPdf } from "../lib/pdfExport";
+import { createDocxLogoHeader } from "../lib/logoData";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 import { jsPDF } from "jspdf";
 
@@ -324,6 +325,7 @@ Gesetzeslotse BERLIN Schuldnerberatung
   const handleExportDocx = async () => {
     try {
       const docChildren: any[] = [];
+      docChildren.push(createDocxLogoHeader(220, 44));
       const lines = editedLetterText.split("\n");
       
       lines.forEach((line) => {
@@ -1155,13 +1157,13 @@ Gesetzeslotse BERLIN Schuldnerberatung
             </div>
 
             {/* Modal Body / Printable Letter DIN 5008 Container */}
-            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
-              <div id="printable-letter-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+            <div className="p-8 overflow-y-auto bg-slate-200 dark:bg-slate-950 flex justify-center py-10">
+              <div id="printable-letter-container" className="printable-area bg-white text-slate-900 p-10 shadow-2xl rounded border border-slate-300 w-full max-w-[210mm] font-serif leading-relaxed text-xs space-y-5 relative">
                 
                 {/* Print Running Header */}
                 <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
                   <div className="flex items-center gap-2">
-                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
+                    <img src="/logo.png" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
                     <span className="font-bold text-slate-900 uppercase">Kanzleischreiben — Gläubigerkorrespondenz</span>
                   </div>
                   <div className="font-mono text-slate-500">
@@ -1177,7 +1179,7 @@ Gesetzeslotse BERLIN Schuldnerberatung
 
                 {/* Document Header with Logo */}
                 <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-                  <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                  <img src="/logo.png" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
                   <div className="text-right text-[10px] font-sans text-slate-500">
                     <p className="font-bold text-slate-800">Gesetzeslotse BERLIN e.V.</p>
                     <p>Littenstraße 10 • 10179 Berlin</p>
@@ -1201,9 +1203,11 @@ Gesetzeslotse BERLIN Schuldnerberatung
                   Berlin, den {formData.date}
                 </div>
 
-                {/* Letter Body */}
-                <div className="pt-4 space-y-4 whitespace-pre-wrap text-xs text-slate-900 font-serif leading-relaxed">
-                  {editedLetterText}
+                {/* Letter Body rendered as individual paragraphs for clean page breaks */}
+                <div className="pt-2 space-y-3 text-xs text-slate-900 font-serif leading-relaxed">
+                  {editedLetterText.split("\n\n").map((para, idx) => (
+                    <p key={idx} className="whitespace-pre-line">{para}</p>
+                  ))}
                 </div>
 
               </div>

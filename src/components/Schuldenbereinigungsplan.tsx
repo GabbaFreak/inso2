@@ -21,6 +21,7 @@ import {
   Layers
 } from "lucide-react";
 import { DebtItem } from "../types";
+import { createDocxLogoHeader } from "../lib/logoData";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
 
 export default function Schuldenbereinigungsplan() {
@@ -279,6 +280,7 @@ export default function Schuldenbereinigungsplan() {
       }
 
       const docChildren: any[] = [];
+      docChildren.push(createDocxLogoHeader(220, 44));
 
       // Header Title
       docChildren.push(

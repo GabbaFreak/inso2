@@ -39,7 +39,7 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 10mm 0 15mm 0 !important;
+    padding: 6mm 0 12mm 0 !important;
     box-shadow: none !important;
     border: none !important;
     background: white !important;
@@ -50,54 +50,52 @@
   }
   @page {
     size: A4 portrait;
-    margin: 20mm 15mm 20mm 15mm;
-    @bottom-right {
-      content: "Seite " counter(page) " von " counter(pages);
-      font-size: 8pt;
-      font-family: Arial, sans-serif;
-      font-weight: bold;
-      color: #334155;
-    }
-    @bottom-left {
-      content: "GESETZESLOTSE BERLIN e.V. • Vertrauliche Mandantenunterlage § 305 InsO";
-      font-size: 7.5pt;
-      font-family: Arial, sans-serif;
-      color: #64748b;
-    }
+    margin: 22mm 15mm 20mm 15mm;
   }
 
-  /* Repeated running page header on printed pages */
+  /* Running Page Header strictly 2 columns with absolute positioning relative to top sheet margin */
   .print-page-header {
-    position: fixed;
-    top: -16mm;
-    left: 0;
-    right: 0;
-    height: 12mm;
+    position: fixed !important;
+    top: -16mm !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 12mm !important;
     display: flex !important;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #cbd5e1;
-    padding-bottom: 3px;
-    background: white;
-    z-index: 1000;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    width: 100% !important;
+    border-bottom: 1.5px solid #0f172a !important;
+    padding-bottom: 3px !important;
+    background: white !important;
+    z-index: 1000 !important;
+    box-sizing: border-box !important;
   }
 
-  /* Repeated running page footer on printed pages */
+  .print-page-header img {
+    max-height: 9mm !important;
+    width: auto !important;
+    object-fit: contain !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Running Page Footer */
   .print-page-footer {
-    position: fixed;
-    bottom: -14mm;
-    left: 0;
-    right: 0;
-    height: 8mm;
+    position: fixed !important;
+    bottom: -14mm !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 8mm !important;
     display: flex !important;
-    justify-content: space-between;
-    align-items: center;
-    border-top: 1px solid #cbd5e1;
-    font-size: 8pt;
-    font-family: Arial, sans-serif;
-    color: #475569;
-    background: white;
-    z-index: 1000;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-top: 1px solid #cbd5e1 !important;
+    font-size: 8pt !important;
+    font-family: Arial, sans-serif !important;
+    color: #475569 !important;
+    background: white !important;
+    z-index: 1000 !important;
   }
 
   .print-page-number::after {
@@ -108,9 +106,41 @@
   }
 
   thead {
-    display: table-header-group;
+    display: table-header-group !important;
   }
-  tr {
-    page-break-inside: avoid;
+
+  /* Page break rules for print and pdf rendering */
+  tr,
+  table tr,
+  tbody tr,
+  section,
+  .print-section,
+  .printable-area tr,
+  .printable-area table tr,
+  .printable-area tbody tr,
+  .printable-area section,
+  .printable-area .print-section,
+  .printable-area .space-y-6 > div,
+  .printable-area .space-y-4 > div,
+  .printable-area .space-y-3 > div,
+  .printable-area .border,
+  .printable-area .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
+}
+
+/* Also apply page-break-inside avoid to printable area sub-elements for html2canvas rendering */
+.printable-area tr,
+.printable-area table tr,
+.printable-area tbody tr,
+.printable-area section,
+.printable-area .print-section,
+.printable-area .space-y-6 > div,
+.printable-area .space-y-4 > div,
+.printable-area .space-y-3 > div,
+.printable-area .border,
+.printable-area .break-inside-avoid {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
 }

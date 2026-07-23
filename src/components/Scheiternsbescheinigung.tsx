@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { DebtItem } from "../types";
 import { exportElementToPdf } from "../lib/pdfExport";
-import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { createDocxLogoHeader } from "../lib/logoData";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType as DocxWidthType } from "docx";
 import { jsPDF } from "jspdf";
 
 export default function Scheiternsbescheinigung() {
@@ -179,6 +180,7 @@ export default function Scheiternsbescheinigung() {
   const handleDownloadDocx = async () => {
     try {
       const docChildren: any[] = [];
+      docChildren.push(createDocxLogoHeader(220, 44));
 
       // Title header
       docChildren.push(
@@ -241,28 +243,32 @@ export default function Scheiternsbescheinigung() {
         })
       );
 
-      const schuldnerLines = [
-        `Name, Vorname:    ${debtorName}`,
-        `Geburtsdatum:     ${debtorDob}`,
-        `Anschrift:        ${debtorAddress}`,
-      ];
-
-      schuldnerLines.forEach(line => {
-        docChildren.push(
-          new DocxParagraph({
-            children: [
-              new DocxTextRun({
-                text: line,
-                size: 20,
-                color: "475569",
-              })
-            ],
-            spacing: { after: 40 }
-          })
-        );
-      });
-
-      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
+      docChildren.push(
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Name, Vorname:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorName, size: 18 })] })] }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geburtsdatum:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorDob, size: 18 })] })] }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anschrift:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: debtorAddress, size: 18 })] })] }),
+              ]
+            }),
+          ]
+        }),
+        new DocxParagraph({ text: "", spacing: { after: 180 } })
+      );
 
       // Section B: Bescheinigende Stelle
       docChildren.push(
@@ -276,32 +282,32 @@ export default function Scheiternsbescheinigung() {
             })
           ],
           spacing: { after: 80 }
-        })
+        }),
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Bezeichnung:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gesetzeslotse BERLIN e.V.", bold: true, size: 18 })] })] }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Akkreditierung:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Staatlich anerkannte Schuldner- und Verbraucherinsolvenzberatungsstelle", size: 18 })] })] }),
+              ]
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Aktenzeichen:", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 70, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: `GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}`, size: 18 })] })] }),
+              ]
+            }),
+          ]
+        }),
+        new DocxParagraph({ text: "", spacing: { after: 180 } })
       );
-
-      const stelleLines = [
-        `Bezeichnung:  Gesetzeslotse BERLIN e.V.`,
-        `Akkreditierung: Staatlich anerkannte Schuldner- und Verbraucherinsolvenzberatungsstelle`,
-        `Aktenzeichen:  GLB-305/BE-${debtorName.substring(0,3).toUpperCase()}`,
-        `Leitender Sachverständiger: Lukas AI`,
-      ];
-
-      stelleLines.forEach(line => {
-        docChildren.push(
-          new DocxParagraph({
-            children: [
-              new DocxTextRun({
-                text: line,
-                size: 20,
-                color: "475569",
-              })
-            ],
-            spacing: { after: 40 }
-          })
-        );
-      });
-
-      docChildren.push(new DocxParagraph({ text: "", spacing: { after: 200 } }));
 
       // Section C: Scheitern des Einigungsversuchs
       docChildren.push(
@@ -745,7 +751,7 @@ export default function Scheiternsbescheinigung() {
                     Dieser Einigungsversuch ist mit Ablauf des <b>{new Date(failureDate).toLocaleDateString("de-DE")}</b> endgültig gescheitert.
                   </p>
                   <p className="font-extrabold pb-0.5">Maßgeblicher Grund des Scheiterns:</p>
-                  <p className="p-2 bg-slate-50 border border-slate-350 rounded italic font-mono text-[8px] text-slate-805">
+                  <p className="p-2 bg-slate-50 border border-slate-300 rounded italic font-mono text-[8px] text-slate-800">
                     "{failureReason}"
                   </p>
                   <p className="pt-1.5">
@@ -836,13 +842,13 @@ export default function Scheiternsbescheinigung() {
             </div>
 
             {/* Modal Body / Printable § 305 Bescheinigung Document */}
-            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
-              <div id="printable-scheiternsbescheinigung-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+            <div className="p-8 overflow-y-auto bg-slate-200 dark:bg-slate-950 flex justify-center py-10">
+              <div id="printable-scheiternsbescheinigung-container" className="printable-area bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded border border-slate-300 w-full max-w-[210mm] font-serif leading-relaxed text-xs space-y-3.5 relative pb-10">
                 
                 {/* Print Running Header */}
                 <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
                   <div className="flex items-center gap-2">
-                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
+                    <img src="/logo.png" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
                     <span className="font-bold text-slate-900 uppercase">§ 305 Abs. 1 Nr. 1 InsO Bescheinigung</span>
                   </div>
                   <div className="font-mono text-slate-500">
@@ -859,7 +865,7 @@ export default function Scheiternsbescheinigung() {
                 {/* Document Header with Logo & Court Info */}
                 <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-center font-sans">
                   <div className="flex items-center gap-4">
-                    <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                    <img src="/logo.png" alt="Gesetzeslotse Berlin Logo" className="h-10 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
                   </div>
                   <div className="text-right text-[10px] text-slate-700">
                     <p className="font-bold uppercase text-slate-900">{competentCourt}</p>
@@ -912,7 +918,7 @@ export default function Scheiternsbescheinigung() {
                 </div>
 
                 {/* Signatures */}
-                <div className="pt-12 border-t border-slate-300 font-sans">
+                <div className="pt-4 border-t border-slate-300 font-sans">
                   <div className="flex justify-between items-end">
                     <div>
                       <p className="text-xs font-bold">Berlin, den {new Date().toLocaleDateString("de-DE")}</p>

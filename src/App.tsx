@@ -12,7 +12,8 @@ import Schuldenbereinigungsplan from "./components/Schuldenbereinigungsplan";
 import MandantenProfil from "./components/MandantenProfil";
 import { ActivityLog } from "./lib/history";
 import { exportElementToPdf } from "./lib/pdfExport";
-import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { createDocxLogoHeader } from "./lib/logoData";
+import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType as DocxWidthType, BorderStyle as DocxBorderStyle } from "docx";
 import { jsPDF } from "jspdf";
 import { 
   Building, 
@@ -153,6 +154,7 @@ export default function App() {
       const activeDeadlines = deadlinesList;
 
       const docChildren = [
+        createDocxLogoHeader(220, 44),
         new DocxParagraph({
           children: [
             new DocxTextRun({
@@ -197,57 +199,50 @@ export default function App() {
               color: "0f172a"
             })
           ],
-          spacing: { before: 240, after: 180 }
+          spacing: { before: 240, after: 120 }
         }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Name des Mandanten: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: profileName, size: 20 })
+        new DocxTable({
+          width: { size: 100, type: DocxWidthType.PERCENTAGE },
+          rows: [
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Name des Mandanten: ", bold: true, size: 18 }), new DocxTextRun({ text: profileName, size: 18 })] })],
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Geburtsdatum: ", bold: true, size: 18 }), new DocxTextRun({ text: profileDob || "Unbekannt", size: 18 })] })],
+                }),
+              ],
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Anschrift: ", bold: true, size: 18 }), new DocxTextRun({ text: profileAddress || "Nicht angegeben", size: 18 })] })],
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Zuständiges Gericht: ", bold: true, size: 18 }), new DocxTextRun({ text: profileCourt || "Amtsgericht", size: 18 })] })],
+                }),
+              ],
+            }),
+            new DocxTableRow({
+              children: [
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Erwerbstätigkeit: ", bold: true, size: 18 }), new DocxTextRun({ text: profileIsEmployed ? `Ja (${profileEmployer || "k.A."})` : "Nein (erwerbslos / Arbeitssuchend)", size: 18 })] })],
+                }),
+                new DocxTableCell({
+                  width: { size: 50, type: DocxWidthType.PERCENTAGE },
+                  children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Mtl. Nettoeinkommen: ", bold: true, size: 18 }), new DocxTextRun({ text: `EUR ${profileNetIncome.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, size: 18 })] })],
+                }),
+              ],
+            }),
           ],
-          spacing: { after: 120 }
         }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Geburtsdatum: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: profileDob || "Unbekannt", size: 20 })
-          ],
-          spacing: { after: 120 }
-        }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Anschrift: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: profileAddress || "Nicht angegeben", size: 20 })
-          ],
-          spacing: { after: 120 }
-        }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Zuständiges Gericht: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: profileCourt || "Amtsgericht", size: 20 })
-          ],
-          spacing: { after: 120 }
-        }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Erwerbstätigkeit: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: profileIsEmployed ? `Ja (Arbeitgeber: ${profileEmployer || "k.A."})` : "Nein (erwerbslos / Arbeitssuchend)", size: 20 })
-          ],
-          spacing: { after: 120 }
-        }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Mtl. Nettoeinkommen: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: `EUR ${profileNetIncome.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, size: 20 })
-          ],
-          spacing: { after: 120 }
-        }),
-        new DocxParagraph({
-          children: [
-            new DocxTextRun({ text: "Grundfreibetrag P-Konto: ", bold: true, size: 20 }),
-            new DocxTextRun({ text: "EUR 1.500,00 (gesetzlicher Basisschutz 2026/2027)", size: 20 })
-          ],
-          spacing: { after: 240 }
-        }),
+        new DocxParagraph({ text: "", spacing: { after: 180 } }),
 
         // Section 2: Gläubigerverzeichnis
         new DocxParagraph({
@@ -259,7 +254,7 @@ export default function App() {
               color: "0f172a"
             })
           ],
-          spacing: { before: 240, after: 180 }
+          spacing: { before: 240, after: 120 }
         })
       ];
 
@@ -278,38 +273,46 @@ export default function App() {
           })
         );
       } else {
+        const debtTableRows = [
+          new DocxTableRow({
+            tableHeader: true,
+            children: [
+              new DocxTableCell({ width: { size: 8, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "#", bold: true, size: 18 })] })] }),
+              new DocxTableCell({ width: { size: 42, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Gläubiger / Vertretung", bold: true, size: 18 })] })] }),
+              new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Referenz / Aktenzeichen", bold: true, size: 18 })] })] }),
+              new DocxTableCell({ width: { size: 20, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "Forderung (EUR)", bold: true, size: 18 })] })] }),
+            ],
+          }),
+        ];
+
         debtsList.forEach((d, idx) => {
-          docChildren.push(
-            new DocxParagraph({
+          debtTableRows.push(
+            new DocxTableRow({
               children: [
-                new DocxTextRun({
-                  text: `${idx + 1}. ${d.creditorName || "Unbekannter Gläubiger"}`,
-                  bold: true,
-                  size: 20,
-                  color: "1e293b"
-                }),
-                new DocxTextRun({
-                  text: ` (Ref: ${d.fileReference || "GLB-305"}) • Status: ${d.status || "offen"} • Betrag: EUR ${(d.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
-                  size: 20
-                })
+                new DocxTableCell({ width: { size: 8, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: `${idx + 1}`, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 42, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: d.creditorName || d.name || d.creditor || "Gläubiger", bold: true, size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 30, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: d.fileReference || d.reference || d.fileRef || "-", size: 18 })] })] }),
+                new DocxTableCell({ width: { size: 20, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: `EUR ${(d.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, bold: true, size: 18 })] })] }),
               ],
-              spacing: { after: 120 }
             })
           );
         });
 
-        docChildren.push(
-          new DocxParagraph({
+        debtTableRows.push(
+          new DocxTableRow({
             children: [
-              new DocxTextRun({
-                text: `GESAMTE FORDERUNGSSUMME: EUR ${totalDebtsAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`,
-                bold: true,
-                size: 22,
-                color: "1e293b"
-              })
+              new DocxTableCell({ columnSpan: 3, width: { size: 80, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: "GESAMTFORDERUNGSSUMME:", bold: true, size: 18 })] })] }),
+              new DocxTableCell({ width: { size: 20, type: DocxWidthType.PERCENTAGE }, children: [new DocxParagraph({ children: [new DocxTextRun({ text: `EUR ${totalDebtsAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}`, bold: true, size: 18, color: "b91c1c" })] })] }),
             ],
-            spacing: { before: 180, after: 240 }
           })
+        );
+
+        docChildren.push(
+          new DocxTable({
+            width: { size: 100, type: DocxWidthType.PERCENTAGE },
+            rows: debtTableRows,
+          }),
+          new DocxParagraph({ text: "", spacing: { after: 240 } })
         );
       }
 
@@ -1364,13 +1367,13 @@ export default function App() {
             </div>
 
             {/* Modal Body / Printable Document Container */}
-            <div className="p-8 overflow-y-auto bg-slate-100 dark:bg-slate-950 flex justify-center">
-              <div id="printable-mandantenakte-container" className="printable-area bg-white text-slate-900 p-12 shadow-lg border border-slate-200 w-full max-w-[210mm] min-h-[297mm] font-serif leading-relaxed text-xs space-y-6 relative">
+            <div className="p-8 overflow-y-auto bg-slate-200 dark:bg-slate-950 flex justify-center py-10">
+              <div id="printable-mandantenakte-container" className="printable-area bg-white text-slate-900 p-8 sm:p-10 shadow-2xl rounded border border-slate-300 w-full max-w-[210mm] font-serif leading-relaxed text-xs space-y-3.5 relative pb-10">
                 
                 {/* Print Running Header (Visible on every page when printed) */}
                 <div className="hidden print-page-header text-[9px] font-sans text-slate-600">
                   <div className="flex items-center gap-2">
-                    <img src="/logo.svg" alt="Gesetzeslotse Berlin" className="h-6 w-auto object-contain shrink-0" />
+                    <img src="/logo.png" alt="Gesetzeslotse Berlin" className="h-5 w-auto object-contain shrink-0" />
                     <span className="font-bold text-slate-900 uppercase">Verfahrensakte § 305 InsO</span>
                   </div>
                   <div className="font-mono text-slate-500">
@@ -1387,7 +1390,7 @@ export default function App() {
                 {/* Letterhead Header */}
                 <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-center">
                   <div className="flex items-center gap-4">
-                    <img src="/logo.svg" alt="Gesetzeslotse Berlin Logo" className="h-11 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
+                    <img src="/logo.png" alt="Gesetzeslotse Berlin Logo" className="h-11 sm:h-12 w-auto object-contain shrink-0 max-w-none" />
                     <div className="hidden sm:block border-l border-slate-300 pl-3">
                       <p className="text-[10px] font-sans text-slate-600 leading-tight">
                         Anerkannte Beratungsstelle gemäß § 305 InsO<br />
@@ -1413,14 +1416,22 @@ export default function App() {
                   <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900">
                     1. Stammdaten des Schuldners
                   </h3>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-                    <div><b>Name, Vorname:</b> {localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt"}</div>
-                    <div><b>Geburtsdatum:</b> {localStorage.getItem("gesetzeslotse_active_debtor_dob") || "14.05.1984"}</div>
-                    <div><b>Wohnanschrift:</b> {localStorage.getItem("gesetzeslotse_active_debtor_address") || "Hauptstraße 42, 10115 Berlin"}</div>
-                    <div><b>Zuständiges Gericht:</b> {localStorage.getItem("gesetzeslotse_active_debtor_court") || "Amtsgericht Wedding"}</div>
-                    <div><b>Arbeitgeber:</b> {localStorage.getItem("gesetzeslotse_active_debtor_employer") || "Keine Angabe"}</div>
-                    <div><b>Monatliches Nettoeinkommen:</b> EUR {parseFloat(localStorage.getItem("gesetzeslotse_active_debtor_net_income") || "0").toFixed(2)}</div>
-                  </div>
+                  <table className="w-full text-xs text-left border-collapse border-none">
+                    <tbody>
+                      <tr className="border-b border-slate-100">
+                        <td className="py-1.5 pr-2 w-1/2"><b>Name, Vorname:</b> {localStorage.getItem("gesetzeslotse_active_debtor_name") || "Maximilian Schmidt"}</td>
+                        <td className="py-1.5 pl-2 w-1/2"><b>Geburtsdatum:</b> {localStorage.getItem("gesetzeslotse_active_debtor_dob") || "14.05.1984"}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="py-1.5 pr-2 w-1/2"><b>Wohnanschrift:</b> {localStorage.getItem("gesetzeslotse_active_debtor_address") || "Hauptstraße 42, 10115 Berlin"}</td>
+                        <td className="py-1.5 pl-2 w-1/2"><b>Zuständiges Gericht:</b> {localStorage.getItem("gesetzeslotse_active_debtor_court") || "Amtsgericht Wedding"}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 pr-2 w-1/2"><b>Arbeitgeber:</b> {localStorage.getItem("gesetzeslotse_active_debtor_employer") || "Keine Angabe"}</td>
+                        <td className="py-1.5 pl-2 w-1/2"><b>Monatliches Nettoeinkommen:</b> EUR {parseFloat(localStorage.getItem("gesetzeslotse_active_debtor_net_income") || "0").toFixed(2)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
 
                 {/* Section 2: Forderungsverzeichnis */}
@@ -1431,10 +1442,10 @@ export default function App() {
                   <table className="w-full text-[10px] text-left border-collapse border border-slate-300">
                     <thead>
                       <tr className="bg-slate-100 font-bold border-b border-slate-300">
-                        <th className="p-2 border-r border-slate-300">#</th>
+                        <th className="p-2 border-r border-slate-300 w-10 text-center">#</th>
                         <th className="p-2 border-r border-slate-300">Gläubiger / Vertretung</th>
                         <th className="p-2 border-r border-slate-300">Referenz / Aktenzeichen</th>
-                        <th className="p-2 text-right">Forderung (EUR)</th>
+                        <th className="p-2 text-right w-32">Forderung (EUR)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1447,13 +1458,21 @@ export default function App() {
                         }
                         const totalSum = debtsList.reduce((s, item) => s + (item.amount || 0), 0);
 
+                        if (debtsList.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={4} className="p-3 text-center text-slate-500 italic">Keine Gläubiger in der Akte erfasst.</td>
+                            </tr>
+                          );
+                        }
+
                         return (
                           <>
                             {debtsList.map((d, i) => (
                               <tr key={i} className="border-b border-slate-200">
-                                <td className="p-2 border-r border-slate-200 font-mono text-slate-500">{i + 1}</td>
-                                <td className="p-2 border-r border-slate-200 font-bold">{d.name || d.creditor}</td>
-                                <td className="p-2 border-r border-slate-200 font-mono text-slate-600">{d.reference || d.fileRef || "-"}</td>
+                                <td className="p-2 border-r border-slate-200 font-mono text-slate-500 text-center">{i + 1}</td>
+                                <td className="p-2 border-r border-slate-200 font-bold">{d.creditorName || d.name || d.creditor || "Gläubiger"}</td>
+                                <td className="p-2 border-r border-slate-200 font-mono text-slate-600">{d.fileReference || d.reference || d.fileRef || "-"}</td>
                                 <td className="p-2 text-right font-mono font-bold">€ {(d.amount || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}</td>
                               </tr>
                             ))}
@@ -1469,8 +1488,8 @@ export default function App() {
                 </div>
 
                 {/* Section 3: Legal Stamp & Signature */}
-                <div className="pt-12 border-t border-slate-200 font-sans space-y-4">
-                  <div className="flex justify-between items-end pt-8">
+                <div className="pt-4 border-t border-slate-200 font-sans space-y-3">
+                  <div className="flex justify-between items-end pt-4 pb-2">
                     <div>
                       <p className="border-t border-slate-400 pt-1 text-[10px] text-slate-600 font-bold uppercase w-60">
                         Unterschrift Sachbearbeiter / Berater
@@ -1482,7 +1501,7 @@ export default function App() {
                       </p>
                     </div>
                   </div>
-                  <p className="text-[9px] text-slate-400 text-center pt-4">
+                  <p className="text-[9px] text-slate-400 text-center pt-2">
                     Akte erstellt über das Berater-Cockpit Gesetzeslotse BERLIN e.V. — Rechtskräftiges Vordokument für den Eröffnungsantrag beim Amtsgericht.
                   </p>
                 </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FileText, Download, Check, Copy, User, Calendar, MapPin, Building, ShieldCheck, RefreshCw } from "lucide-react";
 import { Document as DocxDocument, Packer as DocxPacker, Paragraph as DocxParagraph, TextRun as DocxTextRun } from "docx";
+import { createDocxLogoHeader } from "../lib/logoData";
 import { logGesetzeslotseActivity } from "../lib/history";
 
 export default function VollmachtGenerator() {
@@ -127,6 +128,7 @@ Handunterschrift des Vollmachtgebers (Mandanten)
   const downloadDocxFile = async () => {
     try {
       const docChildren: any[] = [];
+      docChildren.push(createDocxLogoHeader(220, 44));
 
       // Official elegant Header
       docChildren.push(
