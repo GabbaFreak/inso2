@@ -63,9 +63,22 @@ export default function Schuldenbereinigungsplan() {
 
   const [notification, setNotification] = useState("");
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
 
   const handleExportPdf = async () => {
-    await exportElementToPdf("printable-schuldenbereinigungsplan-container", `Schuldenbereinigungsplan_305_InsO_${debtorName.replace(/\s+/g, "_")}`);
+    setIsExportingPdf(true);
+    try {
+      const cleanName = (debtorName || "Mandant").replace(/[^\w\s-]/gi, "").trim().replace(/\s+/g, "_");
+      await exportElementToPdf(
+        "printable-schuldenbereinigungsplan-container",
+        `Schuldenbereinigungsplan_305_InsO_${cleanName || "Mandant"}`
+      );
+    } catch (err) {
+      console.error("PDF Export error:", err);
+      alert("Fehler beim Erstellen der PDF. Bitte nutzen Sie die 'Drucken'-Funktion als Alternative.");
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const loadProfileAndDebts = () => {
@@ -884,7 +897,7 @@ export default function Schuldenbereinigungsplan() {
       );
 
       // Signatures 2-column table
-      const borderNone = { style: DocxBorderStyle.NONE };
+      const borderNone = { style: DocxBorderStyle.NONE, size: 0, color: "000000" };
       const tableBordersNone = {
         top: borderNone,
         bottom: borderNone,
@@ -1583,10 +1596,11 @@ export default function Schuldenbereinigungsplan() {
                 <button
                   type="button"
                   onClick={handleExportPdf}
-                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer"
+                  disabled={isExportingPdf}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-400 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow cursor-pointer disabled:cursor-not-allowed"
                 >
-                  <Download className="h-4 w-4" />
-                  <span>PDF herunterladen</span>
+                  <Download className={`h-4 w-4 ${isExportingPdf ? "animate-bounce" : ""}`} />
+                  <span>{isExportingPdf ? "Erstelle PDF..." : "PDF herunterladen"}</span>
                 </button>
 
                 <button
@@ -1647,19 +1661,19 @@ export default function Schuldenbereinigungsplan() {
                   <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
                     <span className="text-[9px] uppercase font-bold text-slate-500 block">Gesamtschuld</span>
                     <span className="text-xs font-black text-slate-900 font-mono">
-                      € {totalDebtSum.toLocaleString("de-DE", { minimumFractionDigits: 2 })}
+                      € {(Number(totalDebtSum) || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
                     <span className="text-[9px] uppercase font-bold text-slate-500 block">Tilgungsangebot</span>
                     <span className="text-xs font-black text-emerald-700 font-mono">
-                      € {planTotalProposedBudget.toLocaleString("de-DE", { minimumFractionDigits: 2 })}
+                      € {(Number(planTotalProposedBudget) || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="p-2.5 border border-slate-200 rounded bg-slate-50">
                     <span className="text-[9px] uppercase font-bold text-slate-500 block">Plan-Quote</span>
                     <span className="text-xs font-black text-indigo-700 font-mono">
-                      {averageQuotaPercent.toFixed(1)} %
+                      {(Number(averageQuotaPercent) || 0).toFixed(1)} %
                     </span>
                   </div>
                 </div>
@@ -1683,10 +1697,10 @@ export default function Schuldenbereinigungsplan() {
                       {proRataDetails.map((item) => (
                         <tr key={item.id} className="hover:bg-slate-50">
                           <td className="p-1.5 font-medium text-slate-900">{item.name}</td>
-                          <td className="p-1.5 text-right font-mono text-slate-700">{item.amount.toFixed(2)}</td>
-                          <td className="p-1.5 text-right font-mono text-indigo-700 font-bold">{item.quota.toFixed(1)}%</td>
-                          <td className="p-1.5 text-right font-mono text-emerald-700 font-bold">{item.proposedTotal.toFixed(2)}</td>
-                          <td className="p-1.5 text-right font-mono text-slate-900 font-bold">{item.monthlyRate.toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-mono text-slate-700">{(Number(item.amount) || 0).toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-mono text-indigo-700 font-bold">{(Number(item.quota) || 0).toFixed(1)}%</td>
+                          <td className="p-1.5 text-right font-mono text-emerald-700 font-bold">{(Number(item.proposedTotal) || 0).toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-mono text-slate-900 font-bold">{(Number(item.monthlyRate) || 0).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>

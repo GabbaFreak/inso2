@@ -568,7 +568,7 @@ export default function Scheiternsbescheinigung() {
       docChildren.push(new DocxParagraph({ text: "", spacing: { after: 300 } }));
 
       // Signatures 2-column table
-      const borderNone = { style: DocxBorderStyle.NONE };
+      const borderNone = { style: DocxBorderStyle.NONE, size: 0, color: "000000" };
       const tableBordersNone = {
         top: borderNone,
         bottom: borderNone,

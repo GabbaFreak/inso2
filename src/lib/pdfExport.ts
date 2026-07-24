@@ -194,7 +194,7 @@ async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
         }
       }
 
-      // 3. Sanitize all <style> tags and inline styles in clonedDoc to convert oklch/oklab/color-mix to valid rgb/rgba/hex
+      // 3. Sanitize all <style> tags, live styleSheets, and inline styles in clonedDoc
       const styleElements = Array.from(clonedDoc.querySelectorAll("style"));
       styleElements.forEach((styleTag) => {
         if (styleTag.textContent) {
@@ -202,12 +202,60 @@ async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
         }
       });
 
+      try {
+        const sheets = Array.from(clonedDoc.styleSheets || []);
+        sheets.forEach((sheet) => {
+          try {
+            const rules = Array.from(sheet.cssRules || []);
+            rules.forEach((rule) => {
+              if (
+                rule.cssText &&
+                (rule.cssText.includes("oklch") ||
+                  rule.cssText.includes("color-mix") ||
+                  rule.cssText.includes("oklab") ||
+                  rule.cssText.includes("light-dark") ||
+                  rule.cssText.includes("lab(") ||
+                  rule.cssText.includes("hwb("))
+              ) {
+                const styleRule = rule as CSSStyleRule;
+                if (styleRule.style && styleRule.style.cssText) {
+                  styleRule.style.cssText = replaceModernCssColors(styleRule.style.cssText);
+                }
+              }
+            });
+          } catch {
+            // ignore CORS or sheet read errors
+          }
+        });
+      } catch {
+        // ignore sheet read errors
+      }
+
       const allNodes = [clonedElement, ...Array.from(clonedElement.querySelectorAll<HTMLElement>("*"))];
       allNodes.forEach((node) => {
         if (node.style && node.style.cssText) {
           node.style.cssText = replaceModernCssColors(node.style.cssText);
         }
+        const attrStyle = node.getAttribute("style");
+        if (
+          attrStyle &&
+          (attrStyle.includes("oklch") ||
+            attrStyle.includes("color-mix") ||
+            attrStyle.includes("oklab") ||
+            attrStyle.includes("light-dark"))
+        ) {
+          node.setAttribute("style", replaceModernCssColors(attrStyle));
+        }
       });
+
+      // 4. Safely patch getPropertyValue on CSSStyleDeclaration prototype on clonedDoc.defaultView
+      if (clonedDoc.defaultView && clonedDoc.defaultView.CSSStyleDeclaration) {
+        const origGetPropertyValue = clonedDoc.defaultView.CSSStyleDeclaration.prototype.getPropertyValue;
+        clonedDoc.defaultView.CSSStyleDeclaration.prototype.getPropertyValue = function (prop: string) {
+          const val = origGetPropertyValue.call(this, prop);
+          return replaceModernCssColors(val);
+        };
+      }
     },
   };
 
@@ -221,113 +269,73 @@ async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
       logging: false,
       allowTaint: true,
       useCORS: false,
+      onclone: options.onclone,
     });
   }
 }
 
-function replaceModernCssColors(cssText: string): string {
-  if (!cssText) return cssText;
+let colorCanvas: HTMLCanvasElement | null = null;
+let colorCtx: CanvasRenderingContext2D | null = null;
 
-  const targetPrefixes = ["oklch(", "oklab(", "color-mix(", "light-dark(", "lab(", "hwb("];
-
-  let result = cssText;
-  let guard = 0;
-
-  while (guard < 10000) {
-    guard++;
-    let earliestIdx = -1;
-    let foundPrefix = "";
-
-    for (const prefix of targetPrefixes) {
-      const idx = result.indexOf(prefix);
-      if (idx !== -1 && (earliestIdx === -1 || idx < earliestIdx)) {
-        earliestIdx = idx;
-        foundPrefix = prefix;
-      }
+export function colorToRgb(cssColor: string): string {
+  if (!cssColor || cssColor === "transparent") return "rgba(0, 0, 0, 0)";
+  try {
+    if (!colorCanvas) {
+      colorCanvas = document.createElement("canvas");
+      colorCanvas.width = 1;
+      colorCanvas.height = 1;
+      colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
     }
+    if (!colorCtx) return "#0f172a";
 
-    if (earliestIdx === -1) break;
-
-    let openCount = 0;
-    let endIdx = -1;
-    for (let i = earliestIdx; i < result.length; i++) {
-      if (result[i] === "(") {
-        openCount++;
-      } else if (result[i] === ")") {
-        openCount--;
-        if (openCount === 0) {
-          endIdx = i;
-          break;
-        }
-      }
+    colorCtx.clearRect(0, 0, 1, 1);
+    colorCtx.fillStyle = "#0f172a";
+    colorCtx.fillStyle = cssColor;
+    colorCtx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
+    const alpha = Number((a / 255).toFixed(3));
+    if (alpha === 1) {
+      return `rgb(${r}, ${g}, ${b})`;
     }
-
-    if (endIdx === -1) {
-      break;
-    }
-
-    const matchedExpr = result.substring(earliestIdx, endIdx + 1);
-    let fallback = "#0f172a";
-
-    if (foundPrefix === "oklch(") {
-      fallback = oklchToRgba(matchedExpr);
-    } else if (foundPrefix === "color-mix(") {
-      fallback = "rgba(15, 23, 42, 0.1)";
-    } else if (foundPrefix === "light-dark(") {
-      fallback = "#0f172a";
-    }
-
-    result = result.substring(0, earliestIdx) + fallback + result.substring(endIdx + 1);
-  }
-
-  return result.replace(/oklch\s*\(?/gi, "#0f172a").replace(/oklab\s*\(?/gi, "#0f172a");
-}
-
-function oklchToRgba(str: string): string {
-  const m = str.match(/oklch\(\s*([\d.%]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.%]+))?\s*\)/i);
-  if (!m) {
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  } catch {
     return "#0f172a";
   }
+}
 
-  let L = m[1].endsWith("%") ? parseFloat(m[1]) / 100 : parseFloat(m[1]);
-  let C = parseFloat(m[2]);
-  let H = parseFloat(m[3]);
-  let alpha = 1;
-  if (m[4]) {
-    alpha = m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+export function replaceModernCssColors(cssText: string): string {
+  if (!cssText || typeof cssText !== "string") return cssText;
+
+  let result = cssText;
+  let iterations = 0;
+
+  while (
+    iterations < 10 &&
+    (result.includes("oklch") ||
+      result.includes("oklab") ||
+      result.includes("color-mix") ||
+      result.includes("light-dark") ||
+      result.includes("lab(") ||
+      result.includes("hwb("))
+  ) {
+    iterations++;
+    const prev = result;
+    result = result.replace(
+      /(oklch|oklab|color-mix|light-dark|lab|hwb)\s*\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\)/gi,
+      (match) => colorToRgb(match)
+    );
+    if (result === prev) {
+      result = result
+        .replace(/oklch\([^)]*\)/gi, "#0f172a")
+        .replace(/oklab\([^)]*\)/gi, "#0f172a")
+        .replace(/color-mix\([^)]*\)/gi, "rgba(15, 23, 42, 0.1)")
+        .replace(/light-dark\([^)]*\)/gi, "#0f172a")
+        .replace(/lab\([^)]*\)/gi, "#0f172a")
+        .replace(/hwb\([^)]*\)/gi, "#0f172a");
+      break;
+    }
   }
 
-  if (isNaN(L)) L = 0.5;
-  if (isNaN(C)) C = 0;
-  if (isNaN(H)) H = 0;
-  if (isNaN(alpha)) alpha = 1;
-
-  const hRad = (H * Math.PI) / 180;
-  const labA = C * Math.cos(hRad);
-  const labB = C * Math.sin(hRad);
-
-  const l_ = L + 0.3963377774 * labA + 0.2158037573 * labB;
-  const m_ = L - 0.1055613458 * labA - 0.0638541728 * labB;
-  const s_ = L - 0.0894841775 * labA - 1.2914855480 * labB;
-
-  const l = l_ * l_ * l_;
-  const m3 = m_ * m_ * m_;
-  const s = s_ * s_ * s_;
-
-  const r_lin = +4.0767416621 * l - 3.3077115913 * m3 + 0.2309699294 * s;
-  const g_lin = -1.2684380046 * l + 2.6097574011 * m3 - 0.3413193965 * s;
-  const b_lin = -0.0041960863 * l - 0.7034186147 * m3 + 1.7076147010 * s;
-
-  const gamma = (c: number) =>
-    c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(Math.max(0, c), 1 / 2.4) - 0.055;
-
-  const r = Math.min(255, Math.max(0, Math.round(gamma(r_lin) * 255)));
-  const g = Math.min(255, Math.max(0, Math.round(gamma(g_lin) * 255)));
-  const b = Math.min(255, Math.max(0, Math.round(gamma(b_lin) * 255)));
-
-  if (alpha < 1) {
-    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
-  }
-  return `rgb(${r}, ${g}, ${b})`;
+  return result;
 }
 
